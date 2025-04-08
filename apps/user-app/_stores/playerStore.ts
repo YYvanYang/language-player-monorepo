@@ -1,10 +1,27 @@
 // apps/user-app/_stores/playerStore.ts
 import { create } from 'zustand';
-import { immer } from 'zustand/middleware/immer'; // For easier state updates
+import { immer } from 'zustand/middleware/immer';
 import type { AudioTrackDetailsResponseDTO } from '@repo/types';
-import { AUDIO_DURATION_THRESHOLD_MS, PlaybackState } from '@/../_lib/constants'; // Adjust alias
-import { getTrackDetails } from '@/../_services/trackService'; // Adjust alias
-import { formatDuration } from '@repo/utils'; // Adjust alias
+import { AUDIO_DURATION_THRESHOLD_MS, PlaybackState } from '@/../_lib/constants';
+import { getTrackDetails } from '@/../_services/trackService';
+import { formatDuration, debounce } from '@repo/utils'; // Import debounce
+import { recordProgressAction } from '@/../_actions/userActivityActions'; // Import the action
+
+// Debounce the progress recording function (e.g., update every 5 seconds)
+const debouncedRecordProgress = debounce((trackId: string, progressMs: number) => {
+    if (trackId && progressMs > 0) {
+        console.log(`Debounced: Recording progress ${progressMs}ms for track ${trackId}`);
+        recordProgressAction(trackId, progressMs)
+            .then(result => {
+                if (!result.success) {
+                    console.warn("Failed to record progress via action:", result.message);
+                }
+            })
+            .catch(err => {
+                 console.error("Error calling recordProgressAction:", err);
+            });
+    }
+}, 5000); // 5 seconds delay
 
 // --- State Interface ---
 interface PlayerState {
@@ -104,12 +121,21 @@ export const usePlayerStore = create(
         const elapsed = state._audioContext.currentTime - state._playbackStartTime;
         const newTime = state._playbackStartOffset + elapsed;
         set(draft => {
-            draft.currentTime = Math.min(newTime, draft.duration); // Clamp to duration
-             if (draft.currentTime >= draft.duration) {
+            draft.currentTime = Math.min(newTime, draft.duration);
+            if (draft.currentTime >= draft.duration) {
                 draft.playbackState = PlaybackState.ENDED;
-                internalStop(draft); // Call internal stop to cleanup node
+                internalStop(draft);
+                // Record final progress when ended
+                if (state.currentTrackDetails?.id) {
+                    debouncedRecordProgress(state.currentTrackDetails.id, Math.floor(state.duration * 1000));
+                }
             } else {
                 draft._animationFrameId = requestAnimationFrame(updateTimeWAAPI);
+                // --- Record progress periodically ---
+                if (state.currentTrackDetails?.id) {
+                    debouncedRecordProgress(state.currentTrackDetails.id, Math.floor(draft.currentTime * 1000));
+                }
+                // --- End Record progress ---
             }
         });
     };
@@ -169,11 +195,37 @@ export const usePlayerStore = create(
                 // --- HTML Audio Event Listeners ---
                 element.onplay = () => set(s => { if(s.isStreamingMode) s.playbackState = PlaybackState.PLAYING; });
                 element.onpause = () => set(s => { if(s.isStreamingMode && s.playbackState !== PlaybackState.ENDED) s.playbackState = PlaybackState.PAUSED; }); // Don't set paused if ended
-                element.onended = () => set(s => { if(s.isStreamingMode) s.playbackState = PlaybackState.ENDED; internalStop(s); });
+                
+                // Record final progress on ended event for streaming too
+                element.onended = () => {
+                    set(s => {
+                       if(s.isStreamingMode) {
+                           s.playbackState = PlaybackState.ENDED;
+                           // Record final progress
+                           if (s.currentTrackDetails?.id) {
+                               debouncedRecordProgress(s.currentTrackDetails.id, Math.floor(s.duration * 1000));
+                           }
+                       }
+                    });
+                    internalStop(get()); // Call internal stop
+                };
+                
                 element.onwaiting = () => set(s => { if(s.isStreamingMode) s.playbackState = PlaybackState.BUFFERING; });
                 element.onplaying = () => set(s => { if(s.isStreamingMode) s.playbackState = PlaybackState.PLAYING; }); // From waiting to playing
                 element.onloadedmetadata = () => set(s => { if(s.isStreamingMode) s.duration = element.duration; });
-                element.ontimeupdate = () => set(s => { if(s.isStreamingMode) s.currentTime = element.currentTime; });
+                element.ontimeupdate = () => {
+                    const currentTime = element.currentTime;
+                    set(s => {
+                        if(s.isStreamingMode) {
+                            s.currentTime = currentTime;
+                            // --- Record progress periodically ---
+                            if (s.currentTrackDetails?.id) {
+                                 debouncedRecordProgress(s.currentTrackDetails.id, Math.floor(currentTime * 1000));
+                            }
+                            // --- End Record progress ---
+                        }
+                    });
+                 };
                 element.onprogress = () => { // Update buffered time
                     if(element.buffered.length > 0) {
                        set(s => { if(s.isStreamingMode) s.bufferedTime = element.buffered.end(element.buffered.length - 1); });

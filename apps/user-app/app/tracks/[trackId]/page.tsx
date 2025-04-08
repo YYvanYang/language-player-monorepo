@@ -5,6 +5,7 @@ import { formatDuration } from '@repo/utils'; // Adjust alias
 import { Metadata } from 'next';
 // Import Play button / trigger component if needed here
 import { PlayTrackButton } from '@/../_components/track/PlayTrackButton'; // Adjust alias
+import { TrackActivityClient } from '@/../_components/track/TrackActivityClient'; // NEW Client component
 
 interface TrackDetailPageProps {
   params: { trackId: string };
@@ -76,6 +77,9 @@ export default async function TrackDetailPage({ params }: TrackDetailPageProps) 
 
        {/* Debug: Show play URL (remove in production) */}
        {/* <p className="text-xs mt-2 truncate">Play URL: {trackDetails.playUrl}</p> */}
+
+       {/* --- Activity Section (Client Component) --- */}
+       <TrackActivityClient trackId={trackDetails.id} />
     </div>
   );
 }
