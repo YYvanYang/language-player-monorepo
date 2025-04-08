@@ -4,7 +4,16 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "pnpm run --recursive --parallel build",
+    "build:user-app": "pnpm --filter user-app build",
+    "build:admin-panel": "pnpm --filter admin-panel build",
+    "dev": "pnpm run --recursive --parallel dev",
+    "dev:user-app": "pnpm --filter user-app dev",
+    "dev:admin-panel": "pnpm --filter admin-panel dev",
+    "lint": "pnpm run --recursive --parallel lint",
+    "test": "pnpm run --recursive --parallel test",
+    "clean": "pnpm run --recursive --parallel clean && rm -rf node_modules",
+    "type-check": "pnpm run --recursive --parallel type-check"
   },
   "keywords": [],
   "author": "",
