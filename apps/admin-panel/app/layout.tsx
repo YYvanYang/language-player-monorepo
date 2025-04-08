@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import * as React from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -10,6 +12,16 @@ const geistSans = Geist({
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
+});
+
+// Create queryClient instance for the admin panel
+const queryClient = new QueryClient({
+  // Optional: configure default options for admin queries if needed
+  defaultOptions: {
+    queries: {
+      // Example: staleTime, cacheTime etc.
+    },
+  },
 });
 
 export const metadata: Metadata = {
@@ -27,7 +39,10 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        {children}
+        {/* Wrap with QueryClientProvider */}
+        <QueryClientProvider client={queryClient}>
+          {children}
+        </QueryClientProvider>
       </body>
     </html>
   );
