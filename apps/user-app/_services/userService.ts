@@ -1,78 +1,108 @@
-import apiClient, { APIError } from '@repo/api-client';
+// apps/user-app/_services/userService.ts
+import apiClient from '@repo/api-client'; // Use shared client
 import type {
-    BookmarkResponseDTO,
-    UserProgressResponseDTO,
-    UpdateUserProgressRequestDTO,
+    UserResponseDTO,
     PaginatedResponseDTO,
-    ListBookmarkQueryParams,
-} from '@repo/types';
-import { buildQueryString } from '@/../_lib/utils'; // Assume a helper
+    BookmarkResponseDTO,
+    PlaybackProgressResponseDTO,
+} from '@repo/types'; // Use shared types
+import { buildQueryString } from '@/../_lib/utils'; // Use app-specific or shared utils
+import type { PaginationParams } from '@/../_lib/utils'; // Adjust alias
 
-// --- Bookmarks ---
-
-export async function listBookmarks(params?: ListBookmarkQueryParams): Promise<PaginatedResponseDTO<BookmarkResponseDTO>> {
-    const queryString = buildQueryString(params);
-    const response = await apiClient<PaginatedResponseDTO<BookmarkResponseDTO>>(`/user/bookmarks${queryString}`);
-     if (!response) {
-        throw new Error("Failed to fetch bookmarks: No response from API.");
-    }
-    return response;
+// Define specific param types if needed, mirroring API expectations
+export interface ListProgressParams {
+    limit?: number;
+    offset?: number;
+    // Add sorting if API supports it (e.g., sortBy=lastListenedAt&sortDir=desc)
 }
 
-// Add Bookmark - Example POST request
-export async function addBookmark(trackId: string): Promise<BookmarkResponseDTO> {
-     if (!trackId) {
-        throw new Error("Track ID cannot be empty for bookmarking");
-    }
-    const response = await apiClient<BookmarkResponseDTO>(`/user/bookmarks`, {
-        method: 'POST',
-        body: JSON.stringify({ trackId }), // Assuming API expects { trackId }
-    });
-    if (!response) {
-        throw new Error(`Failed to add bookmark for track ID ${trackId}: No response from API.`);
-    }
-    return response;
+export interface ListBookmarksParams {
+    trackId?: string; // Optional filter
+    limit?: number;
+    offset?: number;
+    // Add sorting if API supports it (e.g., sortBy=createdAt&sortDir=desc)
 }
 
-// Remove Bookmark - Example DELETE request
-export async function removeBookmark(bookmarkId: string): Promise<void> {
-     if (!bookmarkId) {
-        throw new Error("Bookmark ID cannot be empty for deletion");
-    }
-    // Assuming DELETE returns 204 No Content on success, apiClient handles this
-    await apiClient<null>(`/user/bookmarks/${bookmarkId}`, { method: 'DELETE' });
-}
 
-// --- Progress ---
-
-export async function getUserProgress(trackId: string): Promise<UserProgressResponseDTO | null> {
-     if (!trackId) {
-        throw new Error("Track ID cannot be empty for fetching progress");
-    }
-    // API might return 404 if no progress exists, apiClient might throw or return null
+/**
+ * Fetches the profile of the currently authenticated user.
+ * @returns A promise resolving to the user profile DTO.
+ */
+export async function getMyProfile(): Promise<UserResponseDTO> {
+    const endpoint = `/users/me`;
+    console.log(`Fetching user profile from: ${endpoint}`); // Debug log
     try {
-         const response = await apiClient<UserProgressResponseDTO>(`/user/progress/${trackId}`);
-         return response;
+        const response = await apiClient<UserResponseDTO>(endpoint);
+        return response;
     } catch (error) {
-        // If APIError with 404, assume no progress, return null
-        // Re-throw other errors
-        if (error instanceof APIError && error.status === 404) { // Check using APIError
-            return null;
-        }
-        throw error;
+        console.error("Error fetching user profile:", error);
+        throw error; // Re-throw
     }
 }
 
-export async function updateUserProgress(trackId: string, progressData: UpdateUserProgressRequestDTO): Promise<UserProgressResponseDTO> {
+export interface ListProgressServiceParams extends PaginationParams {
+    // Add any other filters if needed
+}
+
+/**
+ * Fetches the paginated list of playback progress records for the authenticated user.
+ * @param params - Optional parameters for pagination.
+ * @returns A promise resolving to the paginated list of progress DTOs.
+ */
+export async function listUserProgress(params?: ListProgressServiceParams): Promise<PaginatedResponseDTO<PlaybackProgressResponseDTO>> {
+    const queryString = buildQueryString(params);
+    const endpoint = `/users/me/progress${queryString}`;
+    console.log(`Fetching user progress from: ${endpoint}`); // Debug log
+    try {
+        const response = await apiClient<PaginatedResponseDTO<PlaybackProgressResponseDTO>>(endpoint);
+         console.log(`Received ${response.data?.length ?? 0} progress records, total ${response.total}`); // Debug log
+        return response;
+    } catch (error) {
+        console.error("Error fetching user progress:", error);
+        throw error; // Re-throw
+    }
+}
+
+/**
+ * Fetches the specific playback progress for a user on a given track.
+ * @param trackId - The UUID of the audio track.
+ * @returns A promise resolving to the playback progress DTO, or throws APIError(404) if not found.
+ */
+export async function getUserTrackProgress(trackId: string): Promise<PlaybackProgressResponseDTO> {
      if (!trackId) {
-        throw new Error("Track ID cannot be empty for updating progress");
+        throw new Error("Track ID cannot be empty");
     }
-     const response = await apiClient<UserProgressResponseDTO>(`/user/progress/${trackId}`, {
-        method: 'PUT', // Or POST depending on API design
-        body: JSON.stringify(progressData),
-    });
-    if (!response) {
-        throw new Error(`Failed to update progress for track ID ${trackId}: No response from API.`);
+    const endpoint = `/users/me/progress/${trackId}`;
+    console.log(`Fetching user progress for track from: ${endpoint}`); // Debug log
+     try {
+        const response = await apiClient<PlaybackProgressResponseDTO>(endpoint);
+        return response;
+    } catch (error) {
+        console.error(`Error fetching progress for track ${trackId}:`, error);
+        throw error; // Re-throw (apiClient should handle 404 mapping)
     }
-    return response;
-} 
+}
+
+
+/**
+ * Fetches the paginated list of bookmarks for the authenticated user, optionally filtered by track.
+ * @param params - Optional parameters for filtering and pagination.
+ * @returns A promise resolving to the paginated list of bookmark DTOs.
+ */
+export async function listUserBookmarks(params?: ListBookmarksParams): Promise<PaginatedResponseDTO<BookmarkResponseDTO>> {
+    const queryString = buildQueryString(params);
+    const endpoint = `/bookmarks${queryString}`; // Endpoint might be directly /bookmarks if backend filters by authenticated user
+    console.log(`Fetching user bookmarks from: ${endpoint}`); // Debug log
+    try {
+        const response = await apiClient<PaginatedResponseDTO<BookmarkResponseDTO>>(endpoint);
+         console.log(`Received ${response.data?.length ?? 0} bookmarks, total ${response.total}`); // Debug log
+        return response;
+    } catch (error) {
+        console.error("Error fetching user bookmarks:", error);
+        throw error; // Re-throw
+    }
+}
+
+// NOTE: Service functions for MUTATIONS (like updateProfile, deleteBookmark) are generally NOT needed here.
+// Mutations are typically handled directly within Server Actions, which call the apiClient.
+// Keep services focused on data FETCHING logic.

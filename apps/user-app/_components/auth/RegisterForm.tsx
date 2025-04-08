@@ -1,24 +1,19 @@
+// apps/user-app/_components/auth/RegisterForm.tsx
 'use client';
 
-import * as React from 'react'; // Updated import for React 19+
-import { useActionState } from 'react';
+import React, { useEffect } from 'react';
+import { useActionState } from 'react'; // Updated import for React 19+
 import { useFormStatus } from 'react-dom';
-import { useRouter } from 'next/navigation'; // For client-side redirect
-import { registerAction } from '../../_actions/authActions'; // Use relative path
-
-// Placeholder for shared UI components
-function Button({ children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) {
-  return <button {...props}>{children}</button>;
-}
-function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
-  return <input {...props} className="border p-1" />;
-}
-// End Placeholder
+import { useRouter } from 'next/navigation';
+import { registerAction } from '@/../_actions/authActions'; // Adjust import alias
+import { Button } from '@repo/ui';
+import { Input } from '@repo/ui'; // Assuming Input exists in shared UI
+import { Label } from '@repo/ui'; // Assuming Label exists in shared UI
 
 function SubmitButton() {
   const { pending } = useFormStatus();
   return (
-    <Button type="submit" aria-disabled={pending} disabled={pending}>
+    <Button type="submit" aria-disabled={pending} disabled={pending} className="w-full">
       {pending ? 'Registering...' : 'Register'}
     </Button>
   );
@@ -26,37 +21,64 @@ function SubmitButton() {
 
 export function RegisterForm() {
   const router = useRouter();
-  const [state, formAction] = useActionState(registerAction, null);
+  // Use useActionState for form state management
+  // Action signature: (prevState, formData) => Promise<{success: boolean, message?: string}>
+  const [state, formAction, isPending] = useActionState(registerAction, null);
 
   // Redirect on successful registration
-  React.useEffect(() => {
+  useEffect(() => {
     if (state?.success) {
-      // Redirect after successful action completion
+      // Registration successful, redirect to home/dashboard or show message
+      console.log("Registration successful, redirecting...");
+      router.push('/'); // Redirect to dashboard after successful registration
       // Optionally show a success message before redirecting
-      router.push('/login?registered=true'); // Redirect to login page or dashboard
     }
   }, [state, router]);
 
   return (
     <form action={formAction} className="space-y-4">
       <div>
-        <label htmlFor="name">Name</label>
-        <Input id="name" name="name" type="text" required />
+        <Label htmlFor="name">Name</Label>
+        <Input
+          id="name"
+          name="name"
+          type="text"
+          required
+          placeholder="John Doe"
+          className={state && !state.success && state.message?.includes('name') ? 'border-red-500' : ''} // Example error highlighting
+        />
       </div>
       <div>
-        <label htmlFor="email">Email</label>
-        <Input id="email" name="email" type="email" required />
+        <Label htmlFor="email">Email</Label>
+        <Input
+          id="email"
+          name="email"
+          type="email"
+          required
+          placeholder="user@example.com"
+          className={state && !state.success && state.message?.includes('email') ? 'border-red-500' : ''}
+        />
       </div>
       <div>
-        <label htmlFor="password">Password (min. 8 characters)</label>
-        <Input id="password" name="password" type="password" required minLength={8} />
+        <Label htmlFor="password">Password</Label>
+        <Input
+          id="password"
+          name="password"
+          type="password"
+          required
+          minLength={8} // Enforce minimum length on client too
+          placeholder="********"
+           className={state && !state.success && state.message?.includes('password') ? 'border-red-500' : ''}
+        />
+         <p className="text-xs text-gray-500 mt-1">Must be at least 8 characters long.</p>
       </div>
 
+      {/* Display general form error message */}
       {state && !state.success && state.message && (
-        <p className="text-red-500 text-sm">{state.message}</p>
+        <p className="text-red-600 text-sm bg-red-50 p-2 rounded border border-red-200">{state.message}</p>
       )}
 
       <SubmitButton />
     </form>
   );
-} 
+}

@@ -1,161 +1,188 @@
+// apps/user-app/_components/collection/CollectionForm.tsx
 'use client';
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useForm, SubmitHandler, Controller } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
-// import { useActionState } from 'react'; // TODO: Use when actions are available
-// import { createCollectionAction, updateCollectionMetadataAction } from '@/actions/collectionActions'; // TODO: Adjust import path
-// import { CollectionType } from '@prisma/client'; // TODO: Adjust import path if needed
+import { useActionState } from 'react';
+import { useFormStatus } from 'react-dom';
+import { useRouter } from 'next/navigation'; // To redirect after creation
 
-// TODO: Define actual schema based on backend requirements
-const collectionSchema = z.object({
-  title: z.string().min(1, '标题不能为空'),
-  description: z.string().optional(),
-  type: z.enum(['PRIVATE', 'PUBLIC']), // TODO: Replace with actual CollectionType enum values if available
-  // initialTrackIds: z.array(z.string()).optional(), // TODO: Add if track selection is implemented
-});
+import { Button, Input, Textarea, Select, Label } from '@repo/ui'; // Adjust path if needed
+import type {
+    AudioCollectionResponseDTO,
+    CreateCollectionRequestDTO,
+    UpdateCollectionRequestDTO,
+    CollectionType,
+} from '@repo/types';
+import {
+    createCollectionAction,
+    updateCollectionMetadataAction,
+} from '@/../_actions/collectionActions'; // Adjust alias
+import { cn } from '@repo/utils'; // Adjust alias
 
-type CollectionFormInputs = z.infer<typeof collectionSchema>;
-
-interface CollectionFormProps {
-  collectionId?: string; // Provide if updating an existing collection
-  defaultValues?: Partial<CollectionFormInputs>;
-  onSubmitSuccess?: () => void;
+// Define the shape of the form data
+interface CollectionFormData {
+    title: string;
+    description: string;
+    type: CollectionType;
+    // initialTrackIds: string[]; // We'll handle track selection separately for simplicity now
 }
 
-export function CollectionForm({
-  collectionId,
-  defaultValues,
-  onSubmitSuccess,
-}: CollectionFormProps) {
-  const {
-    control,
-    handleSubmit,
-    formState: { errors, isSubmitting },
-    reset,
-  } = useForm<CollectionFormInputs>({
-    resolver: zodResolver(collectionSchema),
-    defaultValues: defaultValues || { type: 'PRIVATE' }, // Default type
-  });
+interface CollectionFormProps {
+    initialData?: AudioCollectionResponseDTO | null; // Provide for editing
+    onSuccess?: (collectionId: string) => void; // Optional callback after success
+}
 
-  // TODO: Replace with useActionState when actions are implemented
-  // const [state, formAction, isPending] = useActionState(
-  //   collectionId ? updateCollectionMetadataAction.bind(null, collectionId) : createCollectionAction,
-  //   null
-  // );
+function SubmitButton({ isEditing }: { isEditing: boolean }) {
+    const { pending } = useFormStatus();
+    return (
+        <Button type="submit" disabled={pending}>
+            {pending ? 'Saving...' : (isEditing ? 'Update Collection' : 'Create Collection')}
+        </Button>
+    );
+}
 
-  const onSubmit: SubmitHandler<CollectionFormInputs> = async (data) => {
-    console.log('Form data:', data);
-    // TODO: Replace with formAction(data) when using useActionState
-    try {
-      if (collectionId) {
-        // await updateCollectionMetadataAction(collectionId, data); // Placeholder
-        console.log('Updating collection...', collectionId, data);
-      } else {
-        // await createCollectionAction(data); // Placeholder
-        console.log('Creating collection...', data);
-      }
-      reset(); // Reset form on successful submission
-      onSubmitSuccess?.(); // Call optional success callback
-    } catch (error) {
-      console.error('Form submission error:', error);
-      // TODO: Handle submission error (e.g., display error message from state)
-    }
-  };
+export function CollectionForm({ initialData, onSuccess }: CollectionFormProps) {
+    const router = useRouter();
+    const isEditing = !!initialData;
 
-  return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-      <div>
-        <label htmlFor="title" className="block text-sm font-medium text-gray-700">
-          标题
-        </label>
-        <Controller
-          name="title"
-          control={control}
-          render={({ field }) => (
-            <input
-              {...field}
-              id="title"
-              type="text"
-              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-            />
-          )}
-        />
-        {errors.title && <p className="mt-1 text-sm text-red-600">{errors.title.message}</p>}
-      </div>
+    // --- React Hook Form Setup ---
+    const {
+        register,
+        handleSubmit,
+        reset,
+        control, // Needed for <Select> if it's a custom component
+        formState: { errors, isDirty }, // isDirty useful for enabling submit button
+    } = useForm<CollectionFormData>({
+        defaultValues: {
+            title: initialData?.title ?? '',
+            description: initialData?.description ?? '',
+            type: initialData?.type ?? 'PLAYLIST', // Default to PLAYLIST for new
+            // initialTrackIds: [],
+        },
+    });
 
-      <div>
-        <label htmlFor="description" className="block text-sm font-medium text-gray-700">
-          描述 (可选)
-        </label>
-        <Controller
-          name="description"
-          control={control}
-          render={({ field }) => (
-            <textarea
-              {...field}
-              id="description"
-              rows={3}
-              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-            />
-          )}
-        />
-        {errors.description && <p className="mt-1 text-sm text-red-600">{errors.description.message}</p>}
-      </div>
+    // --- Server Action State ---
+    const actionToCall = isEditing
+        ? updateCollectionMetadataAction.bind(null, initialData!.id) // Bind collectionId for update
+        : createCollectionAction;
 
-      <div>
-        <label htmlFor="type" className="block text-sm font-medium text-gray-700">
-          类型
-        </label>
-        <Controller
-          name="type"
-          control={control}
-          render={({ field }) => (
-            <select
-              {...field}
-              id="type"
-              className="mt-1 block w-full rounded-md border-gray-300 py-2 pl-3 pr-10 text-base focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 sm:text-sm"
-            >
-              {/* TODO: Populate from CollectionType enum */}
-              <option value="PRIVATE">私密</option>
-              <option value="PUBLIC">公开</option>
-            </select>
-          )}
-        />
-         {errors.type && <p className="mt-1 text-sm text-red-600">{errors.type.message}</p>}
-      </div>
+    // Define action result type expected from server actions
+    type FormActionState = {
+        success: boolean;
+        message?: string;
+        collection?: AudioCollectionResponseDTO; // create action returns this
+    } | null;
 
-       {/* TODO: Implement initial track selection UI (e.g., Multi-select dropdown) */}
-       {/*
-       <div>
-         <label htmlFor="initialTracks" className="block text-sm font-medium text-gray-700">
-           初始音轨 (可选)
-         </label>
-         <Controller
-           name="initialTrackIds"
-           control={control}
-           render={({ field }) => (
-             // Replace with your track selection component
-             <select multiple {...field} id="initialTracks" className="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
-               <option value="track1">Track 1</option>
-               <option value="track2">Track 2</option>
-             </select>
-           )}
-         />
-       </div>
-       */}
+    const [state, formAction, isPending] = useActionState<FormActionState, FormData>(actionToCall, null);
 
-      {/* TODO: Display server-side errors from useActionState 'state' */}
-      {/* {state?.message && <p className="text-sm text-red-600">{state.message}</p>} */}
+    // --- Effects ---
+    // Reset form if initialData changes (e.g., navigating between edit pages)
+    useEffect(() => {
+        if (initialData) {
+            reset({
+                title: initialData.title,
+                description: initialData.description ?? '',
+                type: initialData.type,
+            });
+        } else {
+            reset({ title: '', description: '', type: 'PLAYLIST' }); // Reset for create form
+        }
+    }, [initialData, reset]);
 
-      <button
-        type="submit"
-        disabled={isSubmitting} // Use isPending when using useActionState
-        className="inline-flex justify-center rounded-md border border-transparent bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:opacity-50"
-      >
-        {isSubmitting ? '提交中...' : (collectionId ? '更新收藏集' : '创建收藏集')}
-      </button>
-    </form>
-  );
-} 
+    // Handle success feedback/redirect
+    useEffect(() => {
+        if (state?.success) {
+            const collectionId = state.collection?.id ?? initialData?.id;
+            if (onSuccess && collectionId) {
+                onSuccess(collectionId); // Call callback if provided
+            } else if (collectionId && !isEditing) {
+                // Redirect to the newly created collection page
+                router.push(`/collections/${collectionId}`);
+            }
+            // Maybe show a success toast notification here
+        }
+        // Error messages are displayed below the form
+    }, [state, isEditing, onSuccess, initialData?.id, router]);
+
+    // --- Render Logic ---
+    return (
+        // Use the formAction provided by useActionState
+        <form action={formAction} className="space-y-5 p-4 border rounded-lg shadow-sm bg-white">
+            <h2 className="text-xl font-semibold mb-4">
+                {isEditing ? 'Edit Collection' : 'Create New Collection'}
+            </h2>
+
+            {/* Title Field */}
+            <div>
+                <Label htmlFor="title">Title*</Label>
+                <Input
+                    id="title"
+                    {...register('title', { required: 'Title is required' })}
+                    className={cn(errors.title ? 'border-red-500' : '')}
+                />
+                {errors.title && <p className="text-red-500 text-xs mt-1">{errors.title.message}</p>}
+            </div>
+
+            {/* Description Field */}
+            <div>
+                <Label htmlFor="description">Description</Label>
+                <Textarea
+                    id="description"
+                    rows={4}
+                    {...register('description')}
+                    className={cn(errors.description ? 'border-red-500' : '')}
+                />
+                {/* No validation error shown for optional field unless specific rules added */}
+            </div>
+
+            {/* Type Field */}
+            <div>
+                <Label htmlFor="type">Collection Type*</Label>
+                 {/* Using Controller for potentially custom Select component integration */}
+                <Controller
+                    name="type"
+                    control={control}
+                    rules={{ required: 'Collection type is required' }}
+                    render={({ field }) => (
+                         <Select
+                            id="type"
+                            {...field} // Spread field props (value, onChange, onBlur)
+                            className={cn(errors.type ? 'border-red-500' : '')}
+                         >
+                            <option value="PLAYLIST">Playlist</option>
+                            <option value="COURSE">Course</option>
+                        </Select>
+                    )}
+                />
+                {errors.type && <p className="text-red-500 text-xs mt-1">{errors.type.message}</p>}
+            </div>
+
+            {/* --- Optional: Initial Track Selection (Stubbed) --- */}
+            {/*
+            !isEditing && (
+                <div>
+                    <Label htmlFor="initialTracks">Add Initial Tracks (Optional)</Label>
+                    {/* Implement a multi-select component here (e.g., using react-select or Shadcn Combobox) *}
+                    {/* This component would fetch available tracks and allow selection *}
+                    {/* For now, it's omitted, tracks are managed on the detail page *}
+                    <p className="text-xs text-gray-500 mt-1">You can add tracks after creating the collection.</p>
+                </div>
+            )
+            */}
+            {/* --- End Track Selection --- */}
+
+            {/* Display Server Action Error */}
+            {state && !state.success && state.message && (
+                <p className="text-red-500 text-sm p-3 bg-red-50 border border-red-200 rounded">
+                    {state.message}
+                </p>
+            )}
+
+            <div className="flex justify-end">
+                <SubmitButton isEditing={isEditing} />
+                {/* Maybe add a Cancel button */}
+            </div>
+        </form>
+    );
+}
