@@ -1,0 +1,9 @@
+/* packages/ui/src/globals.css */
+/* Add any base CSS variables or minimal styles required by shared components */
+/* Example: Define primary/secondary colors used by buttonVariants if not fully defined in Tailwind theme */
+/* :root { */
+/*   --primary: ...; */
+/*   --secondary: ...; */
+/* } */
+
+/* You might not need anything here if Tailwind handles everything */
