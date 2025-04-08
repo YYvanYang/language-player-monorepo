@@ -1,5 +1,12 @@
 // packages/utils/src/index.ts
 
+import { type ClassValue, clsx } from "clsx"
+import { twMerge } from "tailwind-merge"
+
+export function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs))
+}
+
 /**
  * Formats a duration in milliseconds into a string like MM:SS or HH:MM:SS.
  * @param ms Duration in milliseconds.
