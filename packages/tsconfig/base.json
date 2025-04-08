@@ -1,0 +1,50 @@
+// tsconfig.base.json
+{
+    "compilerOptions": {
+      // Type Checking
+      "strict": true,
+      "noImplicitAny": true,
+      "strictNullChecks": true,
+      "strictFunctionTypes": true,
+      "strictBindCallApply": true,
+      "strictPropertyInitialization": true,
+      "noImplicitThis": true,
+      "useUnknownInCatchVariables": true,
+      "alwaysStrict": true,
+      "noUnusedLocals": true,
+      "noUnusedParameters": true,
+      "exactOptionalPropertyTypes": false, // Consider true for stricter checks later
+      "noImplicitReturns": true,
+      "noFallthroughCasesInSwitch": true,
+      "noUncheckedIndexedAccess": false, // Consider true for stricter checks later
+      "noImplicitOverride": true,
+      "noPropertyAccessFromIndexSignature": false,
+  
+      // Modules
+      "module": "ESNext", // Use modern module system
+      "moduleResolution": "Bundler", // Recommended for modern TS/JS ecosystem
+      "baseUrl": ".", // Allows setting path aliases relative to root
+      "resolveJsonModule": true, // Allow importing JSON files
+  
+      // Emit
+      "noEmit": true, // Let Next.js/build tools handle transpilation/emit
+      "isolatedModules": true, // Required for Babel/SWC transpilation
+  
+      // JavaScript Support
+      "allowJs": false, // Disallow JS files for stricter typing (can be enabled if needed)
+      "checkJs": false, // Don't type-check JS files if allowJs is true
+  
+      // Interop Constraints
+      "esModuleInterop": true, // Recommended for compatibility
+      "forceConsistentCasingInFileNames": true, // Prevent OS-specific casing issues
+  
+      // Language and Environment
+      "target": "ES2020", // Target modern JS features
+      "lib": ["dom", "dom.iterable", "esnext"], // Include necessary libraries for web dev
+      "jsx": "preserve", // Let Next.js handle JSX transformation
+  
+      // Completeness
+      "skipLibCheck": true // Skip type checking of declaration files (.d.ts)
+    },
+    "exclude": ["node_modules", ".pnpm-store", "**/dist", "**/.next"] // Exclude common folders
+  }
