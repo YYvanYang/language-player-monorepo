@@ -13,6 +13,12 @@ DEFAULT_EXCLUDES = [
     'node_modules/*', # Common exclusion
     'dist/*',         # Common exclusion
     'build/*',        # Common exclusion
+    '.next/*',        # Common exclusion
+    'out/*',        # Common exclusion
+    'apps/admin-panel/.next/*',        # Common exclusion
+    'apps/admin-panel/out/*',        # Common exclusion 
+    'apps/user-app/.next/*',        # Common exclusion
+    'apps/user-app/out/*',        # Common exclusion
 ]
 
 def get_tracked_files():
