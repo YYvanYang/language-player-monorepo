@@ -1,1 +1,10 @@
-{ "extends": "../../tsconfig.base.json", "compilerOptions": { "outDir": "dist", "rootDir": "src", "jsx": "react-jsx" }, "include": ["src"], "exclude": ["node_modules", "dist"] }
+{
+    "extends": "../../packages/tsconfig/base.json", // Use base config
+    "compilerOptions": {
+      "outDir": "dist",
+      "rootDir": "src",
+      "jsx": "react-jsx" // Needed for the provider component
+    },
+    "include": ["src"],
+    "exclude": ["node_modules", "dist"]
+  }

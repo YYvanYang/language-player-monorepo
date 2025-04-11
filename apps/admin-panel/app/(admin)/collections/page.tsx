@@ -8,52 +8,39 @@ import { useAdminCollections } from '@/_hooks/useAdminCollections'; // Adjust pa
 import { type AdminListCollectionsParams } from '@/_services/adminCollectionService'; // Adjust path
 import { type ColumnDef, type SortingState, type PaginationState, type ColumnFiltersState } from '@tanstack/react-table';
 import type { AudioCollectionResponseDTO } from '@repo/types';
-import { Button } from '@repo/ui';
-import { Pencil, Trash2, Plus, Loader } from 'lucide-react';
+import { Button, Badge } from '@repo/ui'; // Add Badge
+import { Pencil, Trash2, Loader } from 'lucide-react'; // Remove Plus
 import { deleteCollectionAction } from '@/_actions/adminCollectionActions'; // Adjust path
 import { useQueryClient } from '@tanstack/react-query';
-
-// --- Delete Confirmation Component (Similar to Tracks) ---
-function DeleteCollectionButton({ collectionId, collectionTitle, onSuccess }: { collectionId: string, collectionTitle: string, onSuccess: () => void }) {
-    const [isDeleting, startDeleteTransition] = useTransition();
-    const handleDelete = () => {
-        if (!window.confirm(`Are you sure you want to delete collection "${collectionTitle}" (${collectionId})? This will also remove its association with tracks.`)) { return; }
-        startDeleteTransition(async () => {
-            const result = await deleteCollectionAction(collectionId);
-            if (result.success) {
-                alert(`Collection "${collectionTitle}" deleted.`);
-                onSuccess();
-            } else {
-                alert(`Error deleting collection: ${result.message}`);
-            }
-        });
-    };
-    return ( <Button variant="ghost" size="icon" title="Delete Collection" onClick={handleDelete} disabled={isDeleting}> {isDeleting ? <Loader className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4 text-red-600" />} </Button> );
-}
+import { ResourceActions } from '@/_components/admin/ResourceActions'; // Use ResourceActions
 
 // --- Main Page Component ---
 export default function AdminCollectionsPage() {
     const queryClient = useQueryClient();
     const [sorting, setSorting] = useState<SortingState>([]);
-    const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]); // For client-side filtering example
+    // Client-side filtering example (remove if using server-side)
+    // const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
     const [pagination, setPagination] = useState<PaginationState>({ pageIndex: 0, pageSize: 15 });
 
     // Memoize query params
-    const queryParams = useMemo(() => {
-        const params: AdminListCollectionsParams = { // Replace 'any' with AdminListCollectionsParams type
+    const queryParams = useMemo((): AdminListCollectionsParams => {
+        const params: AdminListCollectionsParams = {
             limit: pagination.pageSize,
             offset: pagination.pageIndex * pagination.pageSize,
         };
         if (sorting.length > 0) {
-            params.sortBy = sorting[0].id;
+            // Ensure the id matches allowed sortBy values
+            params.sortBy = sorting[0].id as AdminListCollectionsParams['sortBy'];
             params.sortDir = sorting[0].desc ? 'desc' : 'asc';
         }
         // Add filter params if doing server-side filtering
+        // const titleFilter = columnFilters.find(f => f.id === 'title');
+        // if(titleFilter) params.q = titleFilter.value as string;
         return params;
-    }, [pagination, sorting/*, columnFilters*/]);
+    }, [pagination, sorting /*, columnFilters*/]);
 
     // Fetch data
-    const { data: queryResponse, isLoading, isError, error } = useAdminCollections(queryParams);
+    const { data: queryResponse, isLoading, isFetching, isError, error } = useAdminCollections(queryParams);
 
     // Memoize data
     const tableData = useMemo(() => queryResponse?.data ?? [], [queryResponse?.data]);
@@ -61,56 +48,85 @@ export default function AdminCollectionsPage() {
 
     // Define Table Columns
     const collectionColumns = useMemo((): ColumnDef<AudioCollectionResponseDTO>[] => [
-        { accessorKey: 'title', header: 'Title', enableColumnFilter: true },
-        { accessorKey: 'type', header: 'Type' },
-        { accessorKey: 'ownerId', header: 'Owner ID' }, // Maybe fetch owner email? Requires JOIN/modification
-        // { header: 'Track Count', cell: ({row}) => row.original.tracks?.length ?? 0 }, // Only works if tracks are included in list response
-        { accessorKey: 'createdAt', header: 'Created At', cell: ({row}) => new Date(row.original.createdAt).toLocaleDateString() },
+        {
+            accessorKey: 'title',
+            header: ({ column }) => (
+                <Button variant="ghost" onClick={() => column.toggleSorting(column.getIsSorted() === "asc")} >
+                    Title <ArrowUpDown className="ml-2 h-4 w-4" />
+                </Button>
+            ),
+            enableSorting: true,
+            // enableColumnFilter: true, // Enable if using client-side filtering
+        },
+        {
+            accessorKey: 'type',
+            header: 'Type',
+            cell: ({ row }) => <Badge variant={row.original.type === 'COURSE' ? 'default' : 'secondary'} >{row.original.type}</Badge>
+        },
+        {
+            accessorKey: 'ownerId',
+            header: 'Owner ID',
+             // Consider fetching/displaying owner email if needed and feasible
+            cell: ({ row }) => <span className="font-mono text-xs">{row.original.ownerId}</span>
+        },
+        // { header: 'Track Count', cell: ({row}) => row.original.tracks?.length ?? 0 }, // Depends on API response
+        {
+            accessorKey: 'createdAt',
+            header: ({ column }) => (
+                 <Button variant="ghost" onClick={() => column.toggleSorting(column.getIsSorted() === "asc")} >
+                    Created At <ArrowUpDown className="ml-2 h-4 w-4" />
+                </Button>
+            ),
+            enableSorting: true,
+            cell: ({ row }) => new Date(row.original.createdAt).toLocaleDateString()
+        },
         {
             id: 'actions',
-            header: 'Actions',
+            header: () => <div className="text-right">Actions</div>,
             cell: ({ row }) => (
-                <div className="flex space-x-1">
-                    <Button variant="ghost" size="icon" asChild title="Edit Collection">
-                        <Link href={`/collections/${row.original.id}/edit`}>
-                            <Pencil className="h-4 w-4 text-blue-600" />
-                        </Link>
-                    </Button>
-                     <DeleteCollectionButton
-                         collectionId={row.original.id}
-                         collectionTitle={row.original.title}
-                         onSuccess={() => {
-                            queryClient.invalidateQueries({ queryKey: ['admin', 'collections'] });
-                         }}
-                    />
-                </div>
+                 <div className="flex justify-end">
+                      <ResourceActions
+                          resourceId={row.original.id}
+                          resourceName="collection"
+                          editPath={`/collections/${row.original.id}/edit`} // Link to admin edit page
+                          deleteAction={deleteCollectionAction}
+                          onDeleteSuccess={() => {
+                              // Invalidate the query to refetch data after successful delete
+                              queryClient.invalidateQueries({ queryKey: adminCollectionsQueryKeys.list(queryParams) });
+                              // Optionally invalidate detail queries if needed elsewhere
+                              queryClient.invalidateQueries({ queryKey: adminCollectionsQueryKeys.detail(row.original.id) });
+                          }}
+                          // onDeleteError={(msg) => { /* Show toast */ }}
+                      />
+                 </div>
             ),
         },
-    ], [queryClient]);
+    ], [queryClient, queryParams]); // Include queryParams in dependencies if used for invalidation
 
     useEffect(() => { if (isError) console.error("Error fetching collections:", error) }, [isError, error]);
 
     return (
-        <div>
+        <div className="container mx-auto py-6">
             <div className="flex justify-between items-center mb-6">
                 <h1 className="text-2xl font-bold">Manage Audio Collections</h1>
-                 {/* Admin usually doesn't create collections? Or maybe they do. */}
+                 {/* Admins likely don't create collections from scratch this way? */}
                  {/* <Button asChild><Link href="/collections/new"><Plus className="h-4 w-4 mr-2" /> Add New Collection</Link></Button> */}
             </div>
 
-            {isError && ( <div className="text-red-600 mb-4">Error loading collections: {error?.message}</div> )}
+            {isError && ( <div className="text-red-600 bg-red-100 border border-red-300 p-3 rounded mb-4">Error loading collections: {error?.message}</div> )}
 
             <DataTable
                 columns={collectionColumns}
                 data={tableData}
                 totalItems={totalCollections}
-                isLoading={isLoading}
+                isLoading={isLoading || isFetching} // Show loading indicator during fetch/refetch
                 pagination={pagination}
                 setPagination={setPagination}
                 sorting={sorting}
                 setSorting={setSorting}
-                columnFilters={columnFilters} // Using client-side filter state
-                setColumnFilters={setColumnFilters}
+                // Pass filter state/setter if using client-side filtering
+                // columnFilters={columnFilters}
+                // setColumnFilters={setColumnFilters}
             />
         </div>
     );

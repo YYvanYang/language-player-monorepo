@@ -1,25 +1,32 @@
+// packages/ui/src/Spinner.tsx
 'use client';
 
 import * as React from 'react';
+import { cn } from '@repo/utils'; // Use shared util
+import { Loader } from 'lucide-react'; // Use Lucide loader for consistency
 
-interface SpinnerProps {
+interface SpinnerProps extends React.HTMLAttributes<SVGSVGElement> {
   size?: 'sm' | 'md' | 'lg';
-  className?: string;
 }
 
-export function Spinner({ size = 'md', className }: SpinnerProps): JSX.Element {
+export function Spinner({ size = 'md', className, ...props }: SpinnerProps): JSX.Element {
   const sizeClasses = {
-    sm: 'w-4 h-4',
-    md: 'w-8 h-8',
-    lg: 'w-12 h-12',
+    sm: 'h-4 w-4',
+    md: 'h-6 w-6',
+    lg: 'h-8 w-8',
   };
 
   return (
-    <div
-      className={`animate-spin rounded-full border-t-2 border-b-2 border-blue-500 ${sizeClasses[size]} ${className || ''}`}
+    <Loader
+      className={cn(
+          "animate-spin text-primary", // Use primary color for spinner
+          sizeClasses[size],
+          className
+      )}
       role="status"
       aria-live="polite"
       aria-label="Loading"
-    ></div>
+      {...props}
+    />
   );
-} 
+}

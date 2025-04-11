@@ -1,86 +1,83 @@
 // apps/user-app/_services/collectionService.ts
-import apiClient from '@repo/api-client'; // Use shared client
+import apiClient from '@repo/api-client';
 import type {
     AudioCollectionResponseDTO,
     PaginatedResponseDTO,
-    AudioTrackResponseDTO, // Needed if GetCollectionDetails includes tracks
-} from '@repo/types'; // Use shared types
-import { buildQueryString } from '@/_lib/utils'; // Use app-specific or shared utils
+    AudioTrackResponseDTO,
+} from '@repo/types';
+// Corrected import path assuming utils is structured correctly
+import { buildQueryString, PaginationParams } from '@repo/utils'; // Use shared util and type
 
-// Define specific param types if needed, mirroring API expectations
-export interface ListCollectionsParams {
-    limit?: number;
-    offset?: number;
-    sortBy?: 'createdAt' | 'title' | 'updatedAt'; // Example sort fields
+// Define specific param types for listing user collections
+export interface ListMyCollectionsParams extends PaginationParams { // Extend shared PaginationParams
+    sortBy?: 'createdAt' | 'title' | 'updatedAt'; // Fields available for sorting user collections
     sortDir?: 'asc' | 'desc';
-    // Add other potential filters like 'type' if API supports it
+    // Add other filters if API supports (e.g., 'type')
+    // type?: CollectionType;
 }
+
+const USER_COLLECTIONS_ENDPOINT = '/users/me/collections'; // Endpoint for the logged-in user's collections
+const PUBLIC_COLLECTIONS_ENDPOINT = '/audio/collections'; // Base endpoint for public collection details
 
 /**
  * Fetches the collections belonging to the currently authenticated user.
- * Assumes authentication is handled by the apiClient (implicitly via cookies handled by browser/fetch).
- * @param params - Optional parameters for pagination and sorting.
- * @returns A promise resolving to the paginated list of user's collections.
  */
-export async function listMyCollections(params?: ListCollectionsParams): Promise<PaginatedResponseDTO<AudioCollectionResponseDTO>> {
+export async function listMyCollections(params?: ListMyCollectionsParams): Promise<PaginatedResponseDTO<AudioCollectionResponseDTO>> {
     const queryString = buildQueryString(params);
-    // Endpoint assumes backend handles retrieving collections for the authenticated user
-    const endpoint = `/users/me/collections${queryString}`;
-    console.log(`Fetching user collections from: ${endpoint}`); // Debug log
+    const endpoint = `${USER_COLLECTIONS_ENDPOINT}${queryString}`;
+    console.log(`SERVICE: Fetching user collections from: ${endpoint}`);
     try {
+        // Auth is handled by apiClient sending cookies
         const response = await apiClient<PaginatedResponseDTO<AudioCollectionResponseDTO>>(endpoint);
-        console.log(`Received ${response.data?.length ?? 0} collections, total ${response.total}`); // Debug log
+        console.log(`SERVICE: Received ${response.data?.length ?? 0} collections, total ${response.total}`);
         return response;
     } catch (error) {
-        console.error("Error fetching user collections:", error);
-        throw error; // Re-throw for TanStack Query or Server Component to handle
+        console.error("SERVICE: Error fetching user collections:", error);
+        throw error; // Re-throw for query hook/component to handle
     }
 }
 
 /**
  * Fetches the details of a specific collection, including its associated tracks.
- * Assumes authentication/authorization is handled by the backend endpoint based on the user's session.
- * @param collectionId - The UUID of the collection to fetch.
- * @returns A promise resolving to the detailed collection DTO.
+ * Uses the public endpoint, backend handles auth/ownership for accessing details.
  */
 export async function getCollectionDetailsWithTracks(collectionId: string): Promise<AudioCollectionResponseDTO> {
     if (!collectionId) {
-        // Throw a specific error type if possible
-        throw new Error("Collection ID cannot be empty");
+        throw new Error("SERVICE: Collection ID cannot be empty");
     }
-    const endpoint = `/audio/collections/${collectionId}`; // Assumes this endpoint returns tracks
-    console.log(`Fetching collection details from: ${endpoint}`); // Debug log
+    // Use the public endpoint; backend checks if user can view it
+    const endpoint = `${PUBLIC_COLLECTIONS_ENDPOINT}/${collectionId}`;
+    console.log(`SERVICE: Fetching collection details from: ${endpoint}`);
     try {
-        // Backend needs to populate the 'tracks' field in the response
+        // Backend should populate 'tracks' based on its logic (e.g., ordered IDs -> fetch tracks)
         const response = await apiClient<AudioCollectionResponseDTO>(endpoint);
-        console.log(`Received collection details for ${collectionId}, tracks: ${response.tracks?.length ?? 0}`); // Debug log
+        console.log(`SERVICE: Received collection details for ${collectionId}, tracks: ${response.tracks?.length ?? 0}`);
         return response;
     } catch (error) {
-        console.error(`Error fetching collection details for ${collectionId}:`, error);
+        console.error(`SERVICE: Error fetching collection details for ${collectionId}:`, error);
         throw error; // Re-throw
     }
 }
 
 /**
- * Fetches only the tracks associated with a specific collection, ordered by position.
- * Useful if you only need the track list after fetching the collection metadata separately.
- * @param collectionId - The UUID of the collection.
- * @returns A promise resolving to an array of track DTOs.
+ * Fetches ONLY the ordered list of tracks for a specific collection.
+ * Useful if the main detail endpoint doesn't include tracks or for updates.
  */
 export async function getTracksForCollection(collectionId: string): Promise<AudioTrackResponseDTO[]> {
      if (!collectionId) {
-        throw new Error("Collection ID cannot be empty");
+        throw new Error("SERVICE: Collection ID cannot be empty");
     }
-    // Assuming a specific endpoint exists, otherwise adapt getCollectionDetailsWithTracks
-    const endpoint = `/audio/collections/${collectionId}/tracks`; // Example endpoint
-    console.log(`Fetching tracks for collection from: ${endpoint}`); // Debug log
+    // Assuming endpoint like GET /audio/collections/{collectionId}/tracks exists
+    // This endpoint might be protected similarly to the main detail endpoint
+    const endpoint = `${PUBLIC_COLLECTIONS_ENDPOINT}/${collectionId}/tracks`;
+    console.log(`SERVICE: Fetching tracks for collection from: ${endpoint}`);
      try {
-        // Backend should return just the list of tracks
+        // Backend returns just the list of tracks in order
         const response = await apiClient<AudioTrackResponseDTO[]>(endpoint);
-        console.log(`Received ${response?.length ?? 0} tracks for collection ${collectionId}`); // Debug log
+        console.log(`SERVICE: Received ${response?.length ?? 0} tracks for collection ${collectionId}`);
         return response ?? []; // Return empty array if response is null/undefined
     } catch (error) {
-        console.error(`Error fetching tracks for collection ${collectionId}:`, error);
+        console.error(`SERVICE: Error fetching tracks for collection ${collectionId}:`, error);
         throw error; // Re-throw
     }
 }

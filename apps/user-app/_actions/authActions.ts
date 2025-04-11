@@ -3,6 +3,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
+import { cookies } from 'next/headers';
 import apiClient, { APIError } from '@repo/api-client';
 import type {
     AuthResponseDTO,
@@ -11,7 +12,10 @@ import type {
     GoogleCallbackRequestDTO,
     RefreshRequestDTO,
     LogoutRequestDTO,
+    UserResponseDTO, // Import User DTO
 } from '@repo/types';
+import { getIronSession } from 'iron-session';
+import { SessionData, getUserSessionOptions } from '@repo/auth'; // Use user options
 
 // Action Result Type
 interface ActionResult {
@@ -20,58 +24,39 @@ interface ActionResult {
     isNewUser?: boolean; // For Google callback
 }
 
-// Fetch URL Helper
-function getAppUrl() {
-    const url = process.env.NEXT_PUBLIC_APP_URL || process.env.VERCEL_URL || "http://localhost:3000";
-    return url.startsWith('http') ? url : `https://${url}`;
-}
-
-// Helper to call the internal session API route
+// Helper to set the user session cookie directly
 async function setFrontendSession(userId: string): Promise<boolean> {
-    const appUrl = getAppUrl();
-    if (!appUrl) {
-        console.error("Auth Action: Cannot set session: Application URL not configured.");
+    if (!userId) {
+        console.error("Auth Action: Cannot set session: userId is missing.");
         return false;
     }
     try {
-        const sessionResponse = await fetch(`${appUrl}/api/auth/session`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId: userId }),
-            cache: 'no-store',
-        });
-        if (!sessionResponse.ok) {
-            const errorBody = await sessionResponse.text();
-            console.error("Auth Action: Failed to set session via API route:", sessionResponse.status, errorBody);
-            return false;
-        }
-        // console.log("Auth Action: Frontend session cookie set successfully for user:", userId);
+        // Use cookies() from next/headers within Server Actions
+        const session = await getIronSession<SessionData>(cookies(), getUserSessionOptions());
+        session.userId = userId;
+        delete session.isAdmin; // Ensure admin flag is not set in user session
+        await session.save();
+        // console.log("Auth Action: User session cookie set successfully for user:", userId);
         return true;
     } catch (error) {
-        console.error("Auth Action: Error calling internal session API:", error);
+        console.error("Auth Action: Error setting user session directly:", error);
         return false;
     }
 }
 
-// Helper to decode User ID from JWT (INSECURE - FOR DEMO ONLY)
-// WARNING: Replace with secure method (backend providing ID or session route verifying token)
-function decodeUserIdFromJwt_INSECURE_DEMO(token: string): string | null {
-    try {
-        if (!token) return null;
-        const parts = token.split('.');
-        if (parts.length !== 3) return null;
-        const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
-        const userId = payload.sub || payload.uid; // Check common claims 'sub' or custom 'uid'
-        if (typeof userId === 'string' && userId) {
-            return userId;
-        }
-        console.warn("Auth Action (decodeUserIdFromJwt_INSECURE_DEMO): Could not find valid user ID (sub or uid) in JWT payload:", payload);
-        return null;
-    } catch (e) {
-        console.error("Auth Action (decodeUserIdFromJwt_INSECURE_DEMO): Failed to decode JWT:", e);
-        return null;
+// Helper to clear the user session cookie directly
+async function clearFrontendSession(): Promise<boolean> {
+     try {
+        const session = await getIronSession<SessionData>(cookies(), getUserSessionOptions());
+        session.destroy();
+        console.log("Auth Action: User session destroyed directly.");
+        return true;
+    } catch (error) {
+        console.error("Auth Action: Error destroying user session directly:", error);
+        return false;
     }
 }
+
 
 // Login Action
 export async function loginAction(previousState: ActionResult | null, formData: FormData): Promise<ActionResult> {
@@ -84,14 +69,17 @@ export async function loginAction(previousState: ActionResult | null, formData: 
 
     try {
         const loginData: LoginRequestDTO = { email, password };
-        const authResponse = await apiClient<AuthResponseDTO>('/auth/login', {
+        // Backend should return user details in the response if login is successful
+        const authResponse = await apiClient<AuthResponseDTO & { user: UserResponseDTO }>('/auth/login', {
             method: 'POST',
             body: JSON.stringify(loginData),
         });
 
-        const userId = decodeUserIdFromJwt_INSECURE_DEMO(authResponse.accessToken);
+        // **CRITICAL:** Get userId from the VERIFIED backend response, NOT the token.
+        const userId = authResponse.user?.id;
         if (!userId) {
-            return { success: false, message: 'Login failed: Could not establish session (invalid token).' };
+            console.error("Login Action: Backend response missing user ID after successful login.");
+            return { success: false, message: 'Login failed: Could not establish session (missing user ID).' };
         }
 
         const sessionSet = await setFrontendSession(userId);
@@ -100,7 +88,7 @@ export async function loginAction(previousState: ActionResult | null, formData: 
         }
 
         revalidatePath('/', 'layout');
-        // TODO: Securely handle/store authResponse.refreshToken if needed
+        // TODO: Securely handle/store authResponse.refreshToken on client if needed for refresh flow
         return { success: true };
 
     } catch (error) {
@@ -124,14 +112,17 @@ export async function registerAction(previousState: ActionResult | null, formDat
 
     try {
         const registerData: RegisterRequestDTO = { email, password, name };
-        const authResponse = await apiClient<AuthResponseDTO>('/auth/register', {
+        // Backend should return user details on successful registration
+        const authResponse = await apiClient<AuthResponseDTO & { user: UserResponseDTO }>('/auth/register', {
             method: 'POST',
             body: JSON.stringify(registerData),
         });
 
-        const userId = decodeUserIdFromJwt_INSECURE_DEMO(authResponse.accessToken);
+        // **CRITICAL:** Get userId from the backend response.
+        const userId = authResponse.user?.id;
         if (!userId) {
-            return { success: false, message: 'Registration failed: Could not establish session (invalid token).' };
+             console.error("Register Action: Backend response missing user ID after successful registration.");
+            return { success: false, message: 'Registration failed: Could not establish session (missing user ID).' };
         }
 
         const sessionSet = await setFrontendSession(userId);
@@ -160,14 +151,16 @@ export async function googleCallbackAction(idToken: string): Promise<ActionResul
 
     try {
         const callbackData: GoogleCallbackRequestDTO = { idToken };
-        const authResponse = await apiClient<AuthResponseDTO>('/auth/google/callback', {
+        const authResponse = await apiClient<AuthResponseDTO & { user: UserResponseDTO }>('/auth/google/callback', {
             method: 'POST',
             body: JSON.stringify(callbackData),
         });
 
-        const userId = decodeUserIdFromJwt_INSECURE_DEMO(authResponse.accessToken);
+        // **CRITICAL:** Get userId from the backend response.
+        const userId = authResponse.user?.id;
         if (!userId) {
-            return { success: false, message: 'Google Sign-In failed: Could not establish session (invalid token).' };
+             console.error("Google Callback Action: Backend response missing user ID after successful callback.");
+             return { success: false, message: 'Google Sign-In failed: Could not establish session (missing user ID).' };
         }
 
         const sessionSet = await setFrontendSession(userId);
@@ -192,49 +185,46 @@ export async function googleCallbackAction(idToken: string): Promise<ActionResul
 
 // Logout Action
 export async function logoutAction() {
-    const appUrl = getAppUrl();
+    // 1. Call Backend Logout (Best effort - Requires secure refresh token handling which is omitted here)
+    // For now, we rely on clearing the frontend session and backend token expiry.
+    // If you implement secure refresh token storage client-side (e.g., secure cookie),
+    // retrieve it here and call the backend /auth/logout endpoint.
+    console.log("Logout Action: Skipping backend /auth/logout call.");
+    // const refreshToken = getSecureRefreshToken(); // Hypothetical
+    // if (refreshToken) {
+    //     try {
+    //         const logoutData: LogoutRequestDTO = { refreshToken };
+    //         await apiClient<void>('/auth/logout', { method: 'POST', body: JSON.stringify(logoutData) });
+    //         clearSecureRefreshToken(); // Hypothetical
+    //     } catch (error) { console.error("Logout Action: Error calling backend /auth/logout:", error); }
+    // }
 
-    // 1. Clear the frontend session cookie (Best effort)
-    if (appUrl) {
-         try {
-             await fetch(`${appUrl}/api/auth/session`, { method: 'DELETE', cache: 'no-store' });
-         } catch (error) { console.error("Logout Action: Error clearing frontend session:", error); }
-    } else { console.error("Logout Action: Cannot clear session: Application URL not configured."); }
-
-
-    // 2. Call Backend Logout (if refresh token is securely accessible)
-    // NOTE: This part is omitted due to complexity of secure client-side token storage.
-    // Rely on session cookie removal and backend token expiry for now.
-    // console.log("Logout Action: Skipping backend /auth/logout call (requires secure refresh token handling).");
-    /*
-    const refreshToken = getSecureRefreshToken(); // Hypothetical
-    if (refreshToken) {
-        try {
-            await apiClient<void>('/auth/logout', { method: 'POST', body: { refreshToken } });
-            clearSecureRefreshToken();
-        } catch (error) { console.error("Logout Action: Error calling backend /auth/logout:", error); }
-    }
-    */
+    // 2. Clear the frontend session cookie directly
+    await clearFrontendSession();
 
     // 3. Revalidate and redirect
-    revalidatePath('/', 'layout');
-    redirect('/login');
+    revalidatePath('/', 'layout'); // Revalidate all layouts/pages potentially affected by auth state
+    redirect('/login'); // Redirect to login page
 }
 
-// Refresh Action (Placeholder - Requires Secure Client-Side Token Management & Handling)
-// This action needs to be called *by client-side logic* when an API call fails with 401.
-// It returns the new tokens, which the client then needs to store.
+// Refresh Action (Placeholder - Complex client-side coordination required)
+// This action would typically be called by client-side logic (e.g., in an API client interceptor)
+// when a primary API request fails with a 401 due to an expired access token.
+// It needs a securely stored refresh token.
 export async function refreshSessionAction(refreshToken: string): Promise<ActionResult & { newAccessToken?: string; newRefreshToken?: string }> {
-    console.warn("refreshSessionAction called - requires client-side logic to store new tokens and retry requests.");
+    console.warn("refreshSessionAction called - requires secure refresh token storage & client-side coordination.");
     if (!refreshToken) {
         return { success: false, message: 'Refresh token is required.' };
     }
     try {
         const refreshData: RefreshRequestDTO = { refreshToken };
+        // Backend returns new tokens
         const authResponse = await apiClient<AuthResponseDTO>('/auth/refresh', {
             method: 'POST',
             body: JSON.stringify(refreshData),
         });
+        // The client-side logic that called this action needs to securely store
+        // the new authResponse.refreshToken and update the access token used for subsequent requests.
         return {
             success: true,
             newAccessToken: authResponse.accessToken,
@@ -242,10 +232,11 @@ export async function refreshSessionAction(refreshToken: string): Promise<Action
         };
     } catch (error) {
         console.error("Refresh Action Error:", error);
-        // If refresh itself fails with 401, the refresh token is invalid/expired.
         if (error instanceof APIError && error.status === 401) {
              console.log("Refresh token invalid/expired during refresh attempt.");
-             // Client-side logic should trigger full logout here.
+             // Clear the invalid refresh token from client storage (hypothetical)
+             // clearSecureRefreshToken();
+             // Signal client to trigger full logout
              return { success: false, message: 'Session expired. Please log in again.' };
         }
         return { success: false, message: 'Failed to refresh session.' };

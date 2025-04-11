@@ -1,51 +1,63 @@
 {
-    "compilerOptions": {
-      "strict": true,
-      "noImplicitAny": true,
-      "strictNullChecks": true,
-      "strictFunctionTypes": true,
-      "strictBindCallApply": true,
-      "strictPropertyInitialization": true,
-      "noImplicitThis": true,
-      "useUnknownInCatchVariables": true,
-      "alwaysStrict": true,
-      "noUnusedLocals": true,
-      "noUnusedParameters": true,
-      "exactOptionalPropertyTypes": false,
-      "noImplicitReturns": true,
-      "noFallthroughCasesInSwitch": true,
-      "noUncheckedIndexedAccess": false,
-      "noImplicitOverride": true,
-      "noPropertyAccessFromIndexSignature": false,
-  
-      "module": "ESNext",
-      "moduleResolution": "Bundler",
-      "baseUrl": ".",
-      "resolveJsonModule": true,
-  
-      "noEmit": true,
-      "isolatedModules": true,
-  
-      "allowJs": false,
-      "checkJs": false,
-  
-      "esModuleInterop": true,
-      "forceConsistentCasingInFileNames": true,
-  
-      "target": "ES2020",
-      "lib": ["dom", "dom.iterable", "esnext"],
-      "jsx": "preserve",
-  
-      "skipLibCheck": true,
-  
-      "paths": {
-        "@repo/api-client": ["./api-client/src/index.ts"],
-        "@repo/auth": ["./auth/src/index.ts"],
-        "@repo/query-client": ["./query-client/src/index.ts"],
-        "@repo/ui": ["./ui/src/index.ts"],
-        "@repo/utils": ["./utils/src/index.ts"],
-        "@repo/types": ["./types/src/index.ts"]
-      }
-    },
-    "exclude": ["node_modules", ".pnpm-store", "**/dist", "**/.next"]
-  }
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "display": "Default",
+  "compilerOptions": {
+    // Type Checking
+    "strict": true,
+    "noImplicitAny": true,
+    "strictNullChecks": true,
+    "strictFunctionTypes": true,
+    "strictBindCallApply": true,
+    "strictPropertyInitialization": false, // Often false for React components
+    "noImplicitThis": true,
+    "useUnknownInCatchVariables": true,
+    "alwaysStrict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "exactOptionalPropertyTypes": false, // Can be strict, but sometimes inconvenient
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedIndexedAccess": false, // Consider enabling for more safety
+    "noImplicitOverride": true,
+    "noPropertyAccessFromIndexSignature": false,
+
+    // Modules
+    "module": "ESNext", // Use ESNext for modern module features
+    "moduleResolution": "Bundler", // Recommended for modern TS/JS interop
+    "baseUrl": ".", // Important for path aliases
+    "resolveJsonModule": true, // Allow importing JSON files
+
+    // Emit
+    "noEmit": true, // Let Turborepo/build tools handle emit, TS only checks
+    "isolatedModules": true, // Required by Turborepo/SWC/Babel
+
+    // Interop Constraints
+    "esModuleInterop": true, // Enables compatibility with CJS modules
+    "forceConsistentCasingInFileNames": true, // Prevent OS-dependent casing issues
+    "allowSyntheticDefaultImports": true, // Allow default imports from modules with no default export
+
+    // Language and Environment
+    "target": "ES2020", // Target modern JS features
+    "lib": ["dom", "dom.iterable", "esnext"], // Include necessary DOM and modern JS libs
+    "jsx": "preserve", // Let Next.js/React handle JSX transform
+    "skipLibCheck": true, // Skip type checking of declaration files (node_modules)
+
+    // Path Aliases (Define common aliases here)
+    "paths": {
+      "@repo/api-client": ["./packages/api-client/src/index.ts"],
+      "@repo/auth": ["./packages/auth/src/index.ts"],
+      "@repo/query-client": ["./packages/query-client/src/index.ts"],
+      "@repo/ui": ["./packages/ui/src/index.ts"],
+      "@repo/utils": ["./packages/utils/src/index.ts"],
+      "@repo/types": ["./packages/types/src/index.ts"]
+    }
+  },
+  "exclude": [
+      "node_modules",
+      ".turbo",
+      "dist",
+      "**/dist",
+      "**/.next",
+      "**/coverage"
+    ] // Exclude common build/dependency/cache folders
+}

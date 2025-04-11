@@ -1,21 +1,34 @@
-// apps/user-app/_actions/uploadActions.ts (or add to userActivityActions.ts)
+// apps/user-app/_actions/uploadActions.ts
 'use server';
 
 import { revalidateTag } from 'next/cache';
+import { cookies } from 'next/headers'; // Needed for auth check
 import apiClient, { APIError } from '@repo/api-client';
 import type {
     RequestUploadRequestDTO,
     RequestUploadResponseDTO,
-    CompleteUploadRequestDTO,
+    CompleteUploadRequestDTO, // Changed from CompleteUploadInputDTO based on backend
     AudioTrackResponseDTO,
     BatchRequestUploadInputRequestDTO,
     BatchRequestUploadInputResponseDTO,
-    BatchCompleteUploadInputDTO,
+    BatchCompleteUploadInputDTO, // Changed based on backend
     BatchCompleteUploadResponseDTO,
+    BatchCompleteUploadItemDTO // Used in BatchCompleteUploadInputDTO
 } from '@repo/types';
-// Import helper to get user ID if needed (e.g., from session or context)
-// Assuming getAuthenticatedUserID helper exists (from collectionActions example)
-// import { getAuthenticatedUserID } from './collectionActions';
+import { getIronSession } from 'iron-session';
+import { SessionData, getUserSessionOptions } from '@repo/auth';
+
+// --- Helper to get authenticated User ID ---
+async function getAuthenticatedUserID(): Promise<string | null> {
+     try {
+        const session = await getIronSession<SessionData>(cookies(), getUserSessionOptions());
+        return session.userId ?? null;
+     } catch(error) {
+        console.error("Error getting session in upload action:", error);
+        return null;
+     }
+}
+// --- End Helper ---
 
 // --- Action Result Types ---
 interface RequestUploadResult {
@@ -32,21 +45,19 @@ interface CompleteUploadResult {
 interface BatchRequestUploadResult {
     success: boolean;
     message?: string;
-    results?: BatchRequestUploadInputResponseDTO['results']; // Array of individual results
+    results?: BatchRequestUploadInputResponseDTO['results'];
 }
 interface BatchCompleteUploadResult {
-     success: boolean; // Overall success indicator (e.g., transaction committed)
-     message?: string; // Overall error message
-     results?: BatchCompleteUploadResponseDTO['results']; // Detailed results per item
+     success: boolean;
+     message?: string;
+     results?: BatchCompleteUploadResponseDTO['results'];
 }
 
+// --- Single File Actions ---
 
-// --- Single File Actions (Existing but refined) ---
-
-// Action to request upload URL (can potentially reuse user action if no admin distinction needed)
 export async function requestUploadAction(filename: string, contentType: string): Promise<RequestUploadResult> {
-    // const userId = await getAuthenticatedUserID();
-    // if (!userId) return { success: false, message: "User not authenticated." };
+    const userId = await getAuthenticatedUserID();
+    if (!userId) return { success: false, message: "User not authenticated." };
 
      if (!filename || !contentType) {
          return { success: false, message: "Filename and content type are required." };
@@ -54,15 +65,17 @@ export async function requestUploadAction(filename: string, contentType: string)
 
     try {
         const reqData: RequestUploadRequestDTO = { filename, contentType };
+        // User endpoint for requesting upload
         const response = await apiClient<RequestUploadResponseDTO>('/uploads/audio/request', {
             method: 'POST',
             body: JSON.stringify(reqData),
-            // Auth handled by apiClient automatically sending session cookie/token
         });
+        console.log(`Upload URL requested for user ${userId}, file ${filename}`);
         return { success: true, uploadUrl: response.uploadUrl, objectKey: response.objectKey };
     } catch (error) {
         console.error(`Error requesting upload URL for ${filename}:`, error);
         if (error instanceof APIError) {
+            if (error.status === 401) return { success: false, message: "Authentication required." };
             return { success: false, message: `Failed to request upload URL: ${error.message}` };
         }
         return { success: false, message: 'An unexpected error occurred.' };
@@ -71,49 +84,45 @@ export async function requestUploadAction(filename: string, contentType: string)
 
 
 // Action called after successful upload to create metadata
-// Note: Uses CompleteUploadRequestDTO which expects durationMs
-export async function createTrackMetadataAction(objectKey: string | undefined, formData: FormData): Promise<CompleteUploadResult> {
-    // const userId = await getAuthenticatedUserID();
-    // if (!userId) return { success: false, message: "User not authenticated." };
+// Takes JSON data matching CompleteUploadRequestDTO from @repo/types
+export async function createTrackMetadataAction(
+    // objectKey is now part of the requestData DTO
+    requestData: CompleteUploadRequestDTO
+): Promise<CompleteUploadResult> {
+    const userId = await getAuthenticatedUserID();
+    if (!userId) return { success: false, message: "User not authenticated." };
 
-    // Extract data and potentially convert types
-     const requestData: Partial<CompleteUploadRequestDTO> = {
-         objectKey: objectKey, // Get hidden objectKey if passed separately
-         title: formData.get('title') as string,
-         description: formData.get('description') as string,
-         languageCode: formData.get('languageCode') as string,
-         level: formData.get('level') as string || undefined, // Handle empty string
-         isPublic: formData.get('isPublic') === 'on',
-         tags: (formData.get('tags') as string)?.split(',').map(t => t.trim()).filter(t => t),
-         coverImageUrl: formData.get('coverImageUrl') as string || undefined,
-         // Duration requires parsing from FormData as number
-         durationMs: parseInt(formData.get('durationMs') as string, 10) || 0,
-     };
-
-     // Basic Validation (can use zod schema here too)
-     if (!requestData.objectKey || !requestData.title || !requestData.languageCode || !requestData.durationMs || requestData.durationMs <= 0) {
-         return { success: false, message: "Object Key, Title, Language Code, and a valid Duration are required." };
+     // Basic Validation from DTO fields
+     if (!requestData.objectKey || !requestData.title?.trim() || !requestData.languageCode?.trim() || !requestData.durationMs || requestData.durationMs <= 0) {
+         return { success: false, message: "Object Key, Title, Language Code, and a valid Duration (ms) are required." };
      }
-     if (requestData.coverImageUrl === '') requestData.coverImageUrl = undefined; // Handle empty string for optional URL
-
+     // Ensure optional fields are handled correctly (e.g., empty strings become undefined/null if needed by backend)
+     if (requestData.description === '') requestData.description = undefined;
+     if (requestData.level === '') requestData.level = undefined;
+     if (requestData.coverImageUrl === '') requestData.coverImageUrl = undefined;
+     requestData.isPublic = requestData.isPublic ?? false; // Default to false if null/undefined
+     requestData.tags = requestData.tags?.filter(Boolean) ?? []; // Ensure array and remove empty tags
 
      try {
-         // Use CompleteUploadRequestDTO as body type
+         // User endpoint for completing upload and creating track
          const createdTrack = await apiClient<AudioTrackResponseDTO>(`/audio/tracks`, {
              method: 'POST',
-             body: requestData as CompleteUploadRequestDTO, // Cast after validation
+             body: JSON.stringify(requestData), // Send the validated DTO
          });
 
-         revalidateTag('tracks'); // Invalidate track list cache for the user/public
+         revalidateTag('tracks'); // Invalidate public track list cache
+         revalidateTag(`tracks-${userId}`); // Invalidate user-specific track list cache if applicable
 
+         console.log(`Track metadata created for user ${userId}, track ${createdTrack.id}`);
          return { success: true, track: createdTrack, message: "Track created successfully." };
 
      } catch (error) {
          console.error(`Error creating track metadata for key ${requestData.objectKey}:`, error);
          if (error instanceof APIError) {
-             if (error.status === 409) return { success: false, message: "Conflict: Object key may already be used for a track." };
+             if (error.status === 409) return { success: false, message: "Conflict: This file may have already been processed or the identifier is duplicated." };
              if (error.status === 400) return { success: false, message: `Invalid input: ${error.message}` };
-             // Handle other potential errors (401, 403, 500)
+             if (error.status === 403) return { success: false, message: `Permission denied: ${error.message}` }; // e.g., object key ownership mismatch
+             if (error.status === 401) return { success: false, message: "Authentication required." };
              return { success: false, message: `Failed to create track: ${error.message}` };
          }
          return { success: false, message: 'An unexpected error occurred.' };
@@ -121,11 +130,11 @@ export async function createTrackMetadataAction(objectKey: string | undefined, f
 }
 
 
-// --- ADDED: Batch File Actions ---
+// --- Batch File Actions ---
 
 export async function requestBatchUploadAction(files: { filename: string; contentType: string }[]): Promise<BatchRequestUploadResult> {
-    // const userId = await getAuthenticatedUserID();
-    // if (!userId) return { success: false, message: "User not authenticated." };
+    const userId = await getAuthenticatedUserID();
+    if (!userId) return { success: false, message: "User not authenticated." };
 
     if (!files || files.length === 0) {
         return { success: false, message: "At least one file is required for batch upload request." };
@@ -135,51 +144,73 @@ export async function requestBatchUploadAction(files: { filename: string; conten
         const reqData: BatchRequestUploadInputRequestDTO = {
             files: files.map(f => ({ filename: f.filename, contentType: f.contentType })),
         };
+        // User endpoint for requesting batch upload URLs
         const response = await apiClient<BatchRequestUploadInputResponseDTO>('/uploads/audio/batch/request', {
             method: 'POST',
             body: JSON.stringify(reqData),
         });
+        console.log(`Batch upload URLs requested for user ${userId}, count: ${files.length}`);
         return { success: true, results: response.results };
     } catch (error) {
-        console.error(`Error requesting batch upload URLs:`, error);
+        console.error(`Error requesting batch upload URLs for user ${userId}:`, error);
         if (error instanceof APIError) {
+             if (error.status === 401) return { success: false, message: "Authentication required." };
             return { success: false, message: `Failed to request batch upload URLs: ${error.message}` };
         }
         return { success: false, message: 'An unexpected error occurred.' };
     }
 }
 
-export async function completeBatchUploadAction(tracksData: BatchCompleteUploadItemDTO[]): Promise<BatchCompleteUploadResult> {
-    // const userId = await getAuthenticatedUserID();
-    // if (!userId) return { success: false, message: "User not authenticated." };
+export async function completeBatchUploadAction(
+    // Matches the input DTO expected by the backend
+    tracksData: BatchCompleteUploadItemDTO[]
+): Promise<BatchCompleteUploadResult> {
+    const userId = await getAuthenticatedUserID();
+    if (!userId) return { success: false, message: "User not authenticated." };
 
      if (!tracksData || tracksData.length === 0) {
         return { success: false, message: "At least one track's metadata is required for batch completion." };
     }
 
+     // Basic validation of items (can be more thorough)
+     for (const item of tracksData) {
+         if (!item.objectKey || !item.title?.trim() || !item.languageCode?.trim() || !item.durationMs || item.durationMs <= 0) {
+             return { success: false, message: `Invalid data for track with key ${item.objectKey || '(unknown)'}: Missing required fields.` };
+         }
+          // Ensure optional fields are handled correctly
+         item.description = item.description === '' ? undefined : item.description;
+         item.level = item.level === '' ? undefined : item.level;
+         item.coverImageUrl = item.coverImageUrl === '' ? undefined : item.coverImageUrl;
+         item.isPublic = item.isPublic ?? false;
+         item.tags = item.tags?.filter(Boolean) ?? [];
+     }
+
     try {
         const reqData: BatchCompleteUploadInputDTO = { tracks: tracksData };
-        // API returns 201 Created with detailed results body
+        // User endpoint for completing batch upload
         const response = await apiClient<BatchCompleteUploadResponseDTO>('/audio/tracks/batch/complete', {
             method: 'POST',
             body: JSON.stringify(reqData),
         });
 
-         revalidateTag('tracks'); // Invalidate track list cache
+         revalidateTag('tracks'); // Invalidate public track list cache
+         revalidateTag(`tracks-${userId}`); // Invalidate user-specific track list cache if applicable
 
-        return { success: true, results: response.results }; // Overall success (transaction likely committed)
+        console.log(`Batch upload completed for user ${userId}, items processed: ${response.results?.length ?? 0}`);
+        return { success: true, results: response.results }; // Assume overall success if API call succeeds (201)
 
     } catch (error) {
-        console.error(`Error completing batch upload:`, error);
-        // If the whole transaction failed, APIError might be 400, 409, 500 etc.
-        // The response body in case of error *might* still contain partial results,
-        // but apiClient usually throws before we get here if response.ok is false.
+        console.error(`Error completing batch upload for user ${userId}:`, error);
         if (error instanceof APIError) {
-             // Attempt to extract partial results if backend sends them on error (less common)
              const errorDetails = error.details as { results?: BatchCompleteUploadResponseDTO['results'] };
+             // If backend returns partial results even on error, include them
              if (errorDetails?.results) {
                  return { success: false, message: `Batch completion failed: ${error.message}`, results: errorDetails.results };
              }
+             if (error.status === 401) return { success: false, message: "Authentication required." };
+             if (error.status === 403) return { success: false, message: `Permission denied: ${error.message}` };
+             if (error.status === 400) return { success: false, message: `Invalid input: ${error.message}` };
+             if (error.status === 409) return { success: false, message: `Conflict: ${error.message}` };
              return { success: false, message: `Batch completion failed: ${error.message}` };
         }
         return { success: false, message: 'An unexpected error occurred during batch completion.' };

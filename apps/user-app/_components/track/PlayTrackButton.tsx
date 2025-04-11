@@ -4,59 +4,87 @@ import { usePlayerStore } from '@/_stores/playerStore'; // Adjust path
 import { Button } from '@repo/ui';
 import { Play, Pause, Loader } from 'lucide-react';
 import { PlaybackState } from '@/_lib/constants'; // Adjust path
+import { cn } from '@repo/utils';
 
 interface PlayTrackButtonProps {
   trackId: string;
   trackTitle: string;
+  size?: 'sm' | 'default' | 'lg' | 'icon'; // Allow different sizes
+  className?: string; // Allow custom classes
+  showLabel?: boolean; // Option to show/hide label text
 }
 
-export function PlayTrackButton({ trackId, trackTitle }: PlayTrackButtonProps) {
+export function PlayTrackButton({
+    trackId,
+    trackTitle,
+    size = 'sm',
+    className,
+    showLabel = true,
+}: PlayTrackButtonProps) {
   // Select needed state and actions
-  const { loadAndPlay, togglePlayPause, currentTrackId, playbackState, isLoading } = usePlayerStore(
+  const { loadAndPlayTrack, togglePlayPause, currentTrackId, playbackState } = usePlayerStore(
     (state) => ({
-        loadAndPlay: state.loadAndPlayTrack,
+        loadAndPlayTrack: state.loadAndPlayTrack,
         togglePlayPause: state.togglePlayPause,
         currentTrackId: state.currentTrackDetails?.id,
         playbackState: state.playbackState,
-        isLoading: state.isLoading && state.currentTrackDetails?.id === trackId, // Show loading only for this track
     })
   );
 
   const isCurrentTrack = currentTrackId === trackId;
-  const isPlayingThisTrack = isCurrentTrack && (playbackState === PlaybackState.PLAYING || playbackState === PlaybackState.BUFFERING);
+  // Consider LOADING/DECODING/BUFFERING as intermediate states before playing/pausing
+  const isPlaying = isCurrentTrack && playbackState === PlaybackState.PLAYING;
+  const isPaused = isCurrentTrack && playbackState === PlaybackState.PAUSED;
+  const isLoading = isCurrentTrack && (
+        playbackState === PlaybackState.LOADING ||
+        playbackState === PlaybackState.DECODING ||
+        playbackState === PlaybackState.BUFFERING
+  );
+  const isReady = isCurrentTrack && (playbackState === PlaybackState.READY || playbackState === PlaybackState.ENDED);
+
 
   const handleClick = () => {
     if (isCurrentTrack) {
       togglePlayPause(); // Toggle play/pause if it's already the loaded track
     } else {
-      loadAndPlay(trackId); // Load and play if it's a different track
+      loadAndPlayTrack(trackId); // Load and play if it's a different track
     }
   };
 
   // Determine button icon and text
   let Icon = Play;
   let label = "Play";
-  let isDisabled = false;
-  if(isLoading) {
+  let title = `Play ${trackTitle}`;
+  let variant: "default" | "secondary" | "outline" | "ghost" | "link" | "destructive" | null | undefined = "secondary"; // Default variant
+
+  if (isLoading) {
       Icon = Loader;
-      label = "Loading..."
-      isDisabled = true;
-  } else if (isPlayingThisTrack) {
+      label = "Loading...";
+      title = `Loading ${trackTitle}`;
+      variant = "ghost"; // Use ghost variant while loading
+  } else if (isPlaying) {
       Icon = Pause;
       label = "Pause";
+      title = `Pause ${trackTitle}`;
+      variant = "default"; // Use primary variant when playing
+  } else if (isPaused || isReady) {
+      Icon = Play; // Show Play icon if paused or ready/ended
+      label = "Play";
+      title = `Play ${trackTitle}`;
   }
 
   return (
     <Button
       onClick={handleClick}
-      variant="secondary"
-      size="sm"
-      className="w-full"
-      title={`${label} ${trackTitle}`}
-      disabled={isDisabled}
-      aria-label={`${label} ${trackTitle}`}
+      variant={variant}
+      size={size}
+      className={cn("w-full justify-center", className)} // Default to full width, allow override
+      title={title}
+      disabled={isLoading} // Disable only while loading this specific track
+      aria-label={title}
     >
-      <Icon className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} /> {label}
+      <Icon className={cn("h-4 w-4", showLabel && "mr-2", isLoading && 'animate-spin')} />
+      {showLabel && label}
     </Button>
   );
 }

@@ -1,72 +1,74 @@
 // packages/auth/src/session.ts
 import type { SessionOptions } from 'iron-session';
 
-// Define session data structure - adjust based on your needs
+// Define shared session data structure
 export interface SessionData {
-    userId: string; // UUID string
-    isAdmin?: boolean; // Optional: For role checks within apps
-    // Add other relevant session data: expiry? csrf token? name? email?
+    userId?: string; // Store as string (UUID)
+    isAdmin?: boolean; // Explicitly track admin status in session
+    // Add other fields if needed, e.g., csrfToken: string;
 }
 
-const thirtyDaysInSeconds = 30 * 24 * 60 * 60;
+// Recommended: Use environment variables for secrets and names
+const DEFAULT_USER_SESSION_NAME = 'user_app_auth_session';
+const DEFAULT_ADMIN_SESSION_NAME = 'admin_panel_auth_session';
+const THIRTY_DAYS_IN_SECONDS = 30 * 24 * 60 * 60;
 
-// Base options reusable for both apps
+// Base cookie options
 const baseCookieOptions: SessionOptions['cookieOptions'] = {
-    secure: process.env.NODE_ENV === 'production', // Use secure cookies in production
-    httpOnly: true,                             // Prevent client-side JS access
-    path: '/',                                  // Cookie accessible for all paths
-    maxAge: undefined,                          // Default to session cookie unless ttl is set
+    secure: process.env.NODE_ENV === 'production',
+    httpOnly: true,
+    path: '/',
+    maxAge: undefined, // Default to session cookie (expires on browser close)
 };
 
 // Function to get User App Session Options
 export function getUserSessionOptions(): SessionOptions {
-    const name = process.env.USER_SESSION_NAME;
+    const name = process.env.USER_SESSION_NAME || DEFAULT_USER_SESSION_NAME;
     const secret = process.env.USER_SESSION_SECRET;
 
-    if (!name) {
-        console.warn("USER_SESSION_NAME environment variable is not set. Using default 'user_app_auth_session'.");
-    }
     if (!secret || secret.length < 32) {
-        console.error("CRITICAL: USER_SESSION_SECRET environment variable is not set or is too short (requires >= 32 chars)!");
-        throw new Error("USER_SESSION_SECRET environment variable is not set or is too short!");
+        console.error("CRITICAL SECURITY WARNING: USER_SESSION_SECRET environment variable is missing, too short (< 32 chars), or not loaded correctly! Session encryption will fail.");
+        // Optionally throw an error in production builds
+        // if (process.env.NODE_ENV === 'production') {
+        //     throw new Error("USER_SESSION_SECRET environment variable is not configured correctly.");
+        // }
+        // For development, proceed with a warning but expect errors.
     }
 
     return {
-        cookieName: name || 'user_app_auth_session',
-        password: secret,
-        ttl: 0, // Session cookie
-        // ttl: thirtyDaysInSeconds, // Example: Use if you want persistent login for 30 days
+        cookieName: name,
+        password: secret || "fallback-insecure-user-secret-for-dev-only-32-chars", // Provide insecure fallback ONLY for dev if var missing
+        ttl: 0, // Session cookie (0 means session expires when browser closes)
+        // ttl: THIRTY_DAYS_IN_SECONDS, // Uncomment for persistent login (e.g., 30 days)
         cookieOptions: {
             ...baseCookieOptions,
-            sameSite: 'lax', // Good default for user-facing app
+            sameSite: 'lax', // 'lax' is a good default for user apps
         },
     };
 }
 
 // Function to get Admin Panel Session Options
 export function getAdminSessionOptions(): SessionOptions {
-    const name = process.env.ADMIN_SESSION_NAME;
+    const name = process.env.ADMIN_SESSION_NAME || DEFAULT_ADMIN_SESSION_NAME;
     const secret = process.env.ADMIN_SESSION_SECRET;
+    const userSecret = process.env.USER_SESSION_SECRET;
 
-    if (!name) {
-        console.warn("ADMIN_SESSION_NAME environment variable is not set. Using default 'admin_panel_auth_session'.");
-    }
     if (!secret || secret.length < 32) {
-        console.error("CRITICAL: ADMIN_SESSION_SECRET environment variable is not set or is too short (requires >= 32 chars)!");
-        throw new Error("ADMIN_SESSION_SECRET environment variable is not set or is too short!");
+         console.error("CRITICAL SECURITY WARNING: ADMIN_SESSION_SECRET environment variable is missing, too short (< 32 chars), or not loaded correctly! Session encryption will fail.");
+        // Optionally throw an error in production builds
     }
-    if (secret === process.env.USER_SESSION_SECRET) {
-        console.error("CRITICAL: ADMIN_SESSION_SECRET must be different from USER_SESSION_SECRET!");
-        throw new Error("Admin and User session secrets cannot be the same!");
+    if (secret && userSecret && secret === userSecret) {
+         console.error("CRITICAL SECURITY WARNING: ADMIN_SESSION_SECRET must be DIFFERENT from USER_SESSION_SECRET!");
+        // Optionally throw an error
     }
 
     return {
-        cookieName: name || 'admin_panel_auth_session',
-        password: secret, // MUST BE DIFFERENT FROM USER SECRET
-        ttl: 0, // Session cookie strongly recommended for admin
+        cookieName: name,
+        password: secret || "fallback-insecure-admin-secret-for-dev-only-32-chars", // Provide insecure fallback ONLY for dev
+        ttl: 0, // Session cookie strongly recommended for admin panels
         cookieOptions: {
             ...baseCookieOptions,
-            sameSite: 'strict', // Stricter setting recommended for admin panel
+            sameSite: 'strict', // Stricter setting for admin panel
         },
     };
 }

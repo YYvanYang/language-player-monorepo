@@ -1,225 +1,259 @@
 // apps/admin-panel/app/(admin)/tracks/new/page.tsx
 'use client';
 
-import React, { useState, useTransition, useCallback, ChangeEvent } from 'react';
+import React, { useState, useTransition, useCallback, ChangeEvent, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { requestUploadAction, createTrackMetadataAction } from '@/_actions/adminTrackActions'; // Adjust alias
-import { ResourceForm, FieldSchema } from '@/_components/admin/ResourceForm'; // Adjust alias
-import { Button } from '@repo/ui';
-import { Loader, UploadCloud, CheckCircle, AlertTriangle } from 'lucide-react';
-import type { CompleteUploadRequestDTO, AudioLevel } from '@repo/types';
+import { requestAdminUploadAction, createTrackMetadataAction } from '@/_actions/adminTrackActions'; // Use ADMIN actions
+import { Button, Input, Label, Textarea, Select, Checkbox, Spinner, Progress, Card, CardContent, CardHeader, CardTitle } from '@repo/ui';
+import { UploadCloud, FileAudio, CheckCircle, AlertTriangle, Loader, ListPlus, CircleCheckBig, CircleX, X as IconX, RotateCcw, ArrowLeft } from 'lucide-react';
+import type { CompleteUploadRequestDTO } from '@repo/types';
+import { useForm } from 'react-hook-form';
+import { cn } from '@repo/utils';
+import Link from 'next/link';
 
-// Define the schema for the metadata form (could be moved to a helper)
-const trackMetadataSchema: FieldSchema<CompleteUploadRequestDTO>[] = [
-    // objectKey is hidden, populated after upload
-    { name: 'title', label: 'Title', type: 'text', required: true, validation: { maxLength: 255 } },
-    { name: 'description', label: 'Description', type: 'textarea' },
-    { name: 'languageCode', label: 'Language Code', type: 'text', required: true, placeholder: 'e.g., en-US' },
-    { name: 'level', label: 'Level', type: 'select', options: [
-        { value: "", label: "-- Select Level --" },
-        { value: "A1", label: "A1" }, { value: "A2", label: "A2" },
-        { value: "B1", label: "B1" }, { value: "B2", label: "B2" },
-        { value: "C1", label: "C1" }, { value: "C2", label: "C2" },
-        { value: "NATIVE", label: "Native" },
-    ]},
-    { name: 'durationMs', label: 'Duration (ms)', type: 'number', required: true, validation: { min: 1, valueAsNumber: true }, placeholder: 'Calculated after upload or manual entry' },
-    { name: 'isPublic', label: 'Publicly Visible', type: 'checkbox' },
-    { name: 'tags', label: 'Tags (comma-separated)', type: 'text', placeholder: 'news, easy, grammar' },
-    { name: 'coverImageUrl', label: 'Cover Image URL (Optional)', type: 'text', validation: { pattern: /^(https?:\/\/).*/ } , placeholder: 'https://...'},
-];
+// Define state types
+type UploadStage = 'select' | 'requestingUrl' | 'uploading' | 'metadata' | 'completing' | 'success' | 'error';
 
-
-export default function NewTrackPage() {
-    const router = useRouter();
-    const [uploadStage, setUploadStage] = useState<'select' | 'uploading' | 'metadata' | 'error'>('select');
-    const [file, setFile] = useState<File | null>(null);
-    const [uploadProgress, setUploadProgress] = useState(0);
-    const [uploadError, setUploadError] = useState<string | null>(null);
-    const [presignedUrl, setPresignedUrl] = useState<string | null>(null);
-    const [objectKey, setObjectKey] = useState<string | null>(null);
-    const [durationMs, setDurationMs] = useState<number | undefined>(undefined);
-
-    const [isRequestingUrl, startRequestTransition] = useTransition();
-    const [isUploading, setIsUploading] = useState(false);
-
-    const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
-        const selectedFile = event.target.files?.[0];
-        if (selectedFile) {
-            setFile(selectedFile);
-            setUploadError(null);
-            setUploadStage('select'); // Allow re-selecting
-             // Attempt to get duration client-side
-             getAudioDuration(selectedFile);
-        }
-    };
-
-     const getAudioDuration = (audioFile: File) => {
+// Helper to get audio duration client-side
+const getAudioDuration = (audioFile: File): Promise<number | null> => {
+    return new Promise((resolve) => {
         const reader = new FileReader();
         reader.onload = (e) => {
             const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
             audioContext.decodeAudioData(e.target?.result as ArrayBuffer)
-                .then(buffer => {
-                    setDurationMs(Math.round(buffer.duration * 1000));
-                    console.log("Detected duration:", buffer.duration * 1000, "ms");
-                })
+                .then(buffer => resolve(Math.round(buffer.duration * 1000)))
                 .catch(err => {
                     console.warn("Could not decode audio file client-side to get duration:", err);
-                    setDurationMs(undefined); // Reset if detection fails
+                    resolve(null); // Resolve with null on error
                 });
         };
-         reader.onerror = () => {
+        reader.onerror = () => {
             console.warn("FileReader error trying to get duration.");
-            setDurationMs(undefined);
-         };
+            resolve(null);
+        };
         reader.readAsArrayBuffer(audioFile);
-    };
+    });
+};
 
-    const handleRequestUpload = () => {
-        if (!file) {
-            setUploadError("Please select an audio file first.");
-            return;
+export default function NewTrackPage() {
+    const router = useRouter();
+    const [file, setFile] = useState<File | null>(null);
+    const [stage, setStage] = useState<UploadStage>('select');
+    const [errorMsg, setErrorMsg] = useState<string | null>(null);
+    const [uploadProgress, setUploadProgress] = useState(0);
+    const [uploadResult, setUploadResult] = useState<{ uploadUrl: string; objectKey: string } | null>(null);
+    const [isProcessing, startTransition] = useTransition(); // Generic processing state
+    const xhrRef = useRef<XMLHttpRequest | null>(null); // For cancelling upload
+
+    // React Hook Form for metadata
+    const { register, handleSubmit, formState: { errors }, reset, setValue, watch } = useForm<CompleteUploadRequestDTO>({
+         defaultValues: { isPublic: true } // Default to public?
+    });
+    const durationValue = watch("durationMs"); // Watch duration to display
+
+    const resetFlow = useCallback(() => {
+        if (xhrRef.current) {
+            xhrRef.current.abort();
+            xhrRef.current = null;
         }
-        setUploadError(null);
+        setFile(null);
+        setStage('select');
+        setErrorMsg(null);
         setUploadProgress(0);
+        setUploadResult(null);
+        reset({ isPublic: true }); // Reset form to defaults
+        const fileInput = document.getElementById('audioFile') as HTMLInputElement;
+        if (fileInput) fileInput.value = '';
+    }, [reset]);
 
-        startRequestTransition(async () => {
-            const result = await requestUploadAction(file.name, file.type);
-            if (result.success && result.uploadUrl && result.objectKey) {
-                setPresignedUrl(result.uploadUrl);
-                setObjectKey(result.objectKey);
-                setUploadStage('uploading'); // Move to uploading stage
-                handleDirectUpload(result.uploadUrl); // Start upload immediately
+    const handleFileChange = useCallback(async (event: ChangeEvent<HTMLInputElement>) => {
+        resetFlow();
+        const selectedFile = event.target.files?.[0];
+        if (selectedFile) {
+            setFile(selectedFile);
+            // Pre-fill title and attempt duration detection
+             setValue('title', selectedFile.name.replace(/\.[^/.]+$/, ""));
+            const duration = await getAudioDuration(selectedFile);
+            if (duration) {
+                setValue('durationMs', duration);
             } else {
-                setUploadError(result.message || "Failed to get upload URL.");
-                setUploadStage('error');
+                 setValue('durationMs', 0); // Reset or set to 0 if detection fails
             }
-        });
-    };
+        }
+    }, [resetFlow, setValue]);
 
-    const handleDirectUpload = useCallback((url: string) => {
+    const handleRequestUpload = useCallback(() => {
+        if (!file || stage !== 'select') return;
+        setErrorMsg(null);
+        setUploadProgress(0);
+        setStage('requestingUrl');
+        startTransition(async () => {
+            const result = await requestAdminUploadAction(file.name, file.type); // Use ADMIN action
+            if (!result.success || !result.uploadUrl || !result.objectKey) {
+                setErrorMsg(result.message || "Failed to prepare upload.");
+                setStage('error');
+                return;
+            }
+            setUploadResult({ uploadUrl: result.uploadUrl, objectKey: result.objectKey });
+            setStage('uploading');
+            handleDirectUpload(result.uploadUrl, result.objectKey); // Pass key for metadata
+        });
+    }, [file, stage]);
+
+    const handleDirectUpload = useCallback((url: string, objKey: string) => {
         if (!file || !url) return;
 
-        setIsUploading(true);
         const xhr = new XMLHttpRequest();
+        xhrRef.current = xhr;
         xhr.open('PUT', url, true);
         xhr.upload.onprogress = (event) => {
-            if (event.lengthComputable) {
-                const percentComplete = Math.round((event.loaded / event.total) * 100);
-                setUploadProgress(percentComplete);
-            }
+            if (event.lengthComputable) setUploadProgress(Math.round((event.loaded / event.total) * 100));
         };
         xhr.onload = () => {
-            setIsUploading(false);
+            xhrRef.current = null;
             if (xhr.status >= 200 && xhr.status < 300) {
-                console.log("Upload successful!");
-                setUploadStage('metadata'); // Move to metadata stage
+                setStage('metadata');
+                setValue('objectKey', objKey); // Set the object key in the form
             } else {
-                console.error("Upload failed:", xhr.status, xhr.responseText);
-                setUploadError(`Upload failed: ${xhr.statusText || 'Network Error'}`);
-                setUploadStage('error');
+                setErrorMsg(`Upload failed: ${xhr.statusText || 'Error'} (${xhr.status})`);
+                setStage('error');
             }
         };
         xhr.onerror = () => {
-            setIsUploading(false);
-            console.error("Upload error (network).");
-            setUploadError("Upload failed due to a network error.");
-            setUploadStage('error');
+            xhrRef.current = null;
+            if (stage !== 'select') { // Only set error if not already reset
+                setErrorMsg(xhr.status === 0 ? "Upload failed: Network error or cancelled." : "Upload error occurred.");
+                setStage('error');
+            }
         };
-        xhr.setRequestHeader('Content-Type', file.type); // Set content type for upload
+         xhr.onabort = () => { xhrRef.current = null; console.log("Upload aborted."); };
+        xhr.setRequestHeader('Content-Type', file.type);
         xhr.send(file);
-    }, [file]);
+    }, [file, stage, setValue]);
+
+    const onMetadataSubmit: SubmitHandler<CompleteUploadRequestDTO> = (data) => {
+         if (!uploadResult?.objectKey || stage !== 'metadata') return;
+         data.objectKey = uploadResult.objectKey; // Ensure key is set
+         // Convert tags string back to array
+         if (typeof data.tags === 'string') {
+             data.tags = (data.tags as string).split(',').map(t => t.trim()).filter(Boolean);
+         }
+         if (data.coverImageUrl === '') data.coverImageUrl = undefined; // Handle empty optional URL
+         if (data.level === '') data.level = undefined; // Handle empty optional level
 
 
-    // Handle success after metadata form submission
-    const handleMetadataSuccess = (result: any) => {
-        if(result?.success && result?.track?.id) {
-            console.log("Track created successfully, redirecting...");
-            // Redirect to the track list or the new track's edit page
-            router.push('/tracks'); // Redirect to track list
-            // or router.push(`/tracks/${result.track.id}/edit`);
-        } else {
-            // Error is handled by ResourceForm's useActionState display
-            console.error("Metadata submission failed (state received):", result?.message);
-        }
-    };
+         setStage('completing');
+         setErrorMsg(null);
+         startTransition(async () => {
+             const result = await createTrackMetadataAction(data); // Use ADMIN action
+             if (result.success && result.track) {
+                 setStage('success');
+                 setTimeout(() => router.push(`/tracks/${result.track?.id}/edit`), 1500); // Redirect to edit page
+             } else {
+                 setErrorMsg(result.message || "Failed to create track metadata.");
+                 setStage('metadata'); // Return to metadata stage on error
+             }
+         });
+     };
 
     return (
-        <div>
-            <h1 className="text-2xl font-bold mb-6">Upload New Audio Track</h1>
+        <div className="container mx-auto py-6 space-y-6">
+            <div className="flex items-center justify-between">
+                 <h1 className="text-2xl font-bold">Upload New Track</h1>
+                 <Button variant="outline" size="sm" asChild>
+                    <Link href="/tracks"><ArrowLeft size={16} className="mr-1"/> Back to Tracks</Link>
+                 </Button>
+            </div>
 
-            {/* --- Step 1: File Selection --- */}
-            {uploadStage === 'select' && (
-                <div className="space-y-4 p-6 border rounded-lg bg-white shadow-sm">
-                    <label htmlFor="audioFile" className="block text-sm font-medium text-gray-700">
-                        Select Audio File
-                    </label>
-                    <Input
-                        id="audioFile"
-                        name="audioFile"
-                        type="file"
-                        accept="audio/mpeg, audio/ogg, audio/wav, audio/aac, audio/mp4" // Adjust accepted types
-                        onChange={handleFileChange}
-                        className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-                    />
-                     {file && <p className="text-sm text-gray-600 mt-2">Selected: {file.name} ({file.type})</p>}
-                     {durationMs !== undefined && <p className="text-sm text-gray-500">Detected duration: ~{Math.round(durationMs / 1000)}s</p>}
-                     {uploadError && <p className="text-red-500 text-sm mt-1">{uploadError}</p>}
+            {/* Stage Display */}
+            <div className="flex justify-center space-x-2 text-sm text-slate-500">
+                <span className={cn(stage === 'select' && 'font-semibold text-blue-600')}>1. Select File</span>
+                <span>&rarr;</span>
+                <span className={cn(stage === 'uploading' && 'font-semibold text-blue-600')}>2. Upload</span>
+                 <span>&rarr;</span>
+                <span className={cn(stage === 'metadata' && 'font-semibold text-blue-600')}>3. Add Details</span>
+                <span>&rarr;</span>
+                 <span className={cn(stage === 'success' && 'font-semibold text-green-600')}>4. Complete</span>
+            </div>
 
-                    <Button
-                        onClick={handleRequestUpload}
-                        disabled={!file || isRequestingUrl}
-                        className="mt-4"
-                    >
-                        {isRequestingUrl ? <Loader className="h-4 w-4 mr-2 animate-spin"/> : <UploadCloud className="h-4 w-4 mr-2"/>}
-                        {isRequestingUrl ? 'Preparing...' : 'Start Upload Process'}
-                    </Button>
-                </div>
-            )}
-
-            {/* --- Step 2: Uploading Progress --- */}
-            {uploadStage === 'uploading' && (
-                <div className="p-6 border rounded-lg bg-white shadow-sm">
-                     <h2 className="text-lg font-semibold mb-3">Uploading {file?.name}...</h2>
-                    <div className="w-full bg-gray-200 rounded-full h-2.5 dark:bg-gray-700">
-                        <div
-                            className="bg-blue-600 h-2.5 rounded-full transition-all duration-300 ease-linear"
-                            style={{ width: `${uploadProgress}%` }}
-                        ></div>
-                    </div>
-                    <p className="text-center text-sm mt-2">{uploadProgress}% Complete</p>
-                     {isUploading && !isRequestingUrl && <Loader className="h-5 w-5 animate-spin inline-block ml-2" />}
-                     {uploadError && <p className="text-red-500 text-sm mt-1">{uploadError}</p>}
-                </div>
-            )}
-
-            {/* --- Step 3: Metadata Form --- */}
-            {uploadStage === 'metadata' && objectKey && (
-                <div className="mt-6 p-6 border rounded-lg bg-white shadow-sm">
-                    <div className="flex items-center text-green-600 mb-4">
-                       <CheckCircle className="h-5 w-5 mr-2" /> Upload Complete! Enter Track Details:
-                    </div>
-                    <ResourceForm<CompleteUploadRequestDTO> // Ensure type matches
-                        schema={trackMetadataSchema}
-                         initialData={{ // Pre-fill known values
-                            objectKey: objectKey, // IMPORTANT: Include hidden field if needed, or handle in action
-                            durationMs: durationMs, // Pre-fill detected duration
-                            isPublic: true, // Default to public
-                         } as any} // Cast might be needed if form type differs slightly
-                        action={createTrackMetadataAction.bind(null, /* Add hidden objectKey if form doesn't have it */ objectKey)} // Bind objectKey if not part of form data directly
-                        onSuccess={handleMetadataSuccess}
-                        submitButtonText="Create Track"
-                    />
-                </div>
-            )}
-
-             {/* --- Error State --- */}
-            {uploadStage === 'error' && uploadError && (
-                 <div className="mt-6 p-4 border border-red-400 bg-red-50 rounded-lg text-red-700 flex items-center">
-                      <AlertTriangle className="h-5 w-5 mr-2" />
-                      {uploadError}
-                      <Button onClick={() => setUploadStage('select')} variant="outline" size="sm" className="ml-auto">Try Again</Button>
+            {/* Error Display */}
+            {stage === 'error' && errorMsg && (
+                 <div className="p-4 border border-red-400 bg-red-50 rounded-lg text-red-700 flex items-center justify-between">
+                     <span><AlertTriangle className="h-5 w-5 inline mr-2"/> {errorMsg}</span>
+                     <Button variant="ghost" size="sm" onClick={resetFlow}><RotateCcw size={16}/> Try Again</Button>
                  </div>
             )}
+             {stage === 'success' && (
+                  <div className="p-4 border border-green-400 bg-green-50 rounded-lg text-green-700 flex items-center justify-center">
+                      <CheckCircle className="h-5 w-5 inline mr-2"/> Track created successfully! Redirecting...
+                  </div>
+             )}
+
+             {/* Step 1: Select File */}
+             <Card className={cn(stage !== 'select' && 'hidden')}>
+                 <CardHeader><CardTitle>Select Audio File</CardTitle></CardHeader>
+                 <CardContent className="space-y-4">
+                      <Label htmlFor="audioFile">Audio File (MP3, WAV, etc.)</Label>
+                      <Input
+                          id="audioFile"
+                          name="audioFile"
+                          type="file"
+                          accept="audio/*"
+                          onChange={handleSingleFileChange}
+                          className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200 dark:file:bg-slate-700 dark:file:text-slate-200 dark:hover:file:bg-slate-600"
+                      />
+                      {file && <p className="text-sm text-slate-600 dark:text-slate-400 mt-2">Selected: {file.name} ({file.type})</p>}
+                      {watch("durationMs") > 0 && <p className="text-sm text-gray-500">Detected duration: ~{Math.round(watch("durationMs") / 1000)}s</p>}
+                      <Button onClick={handleRequestUpload} disabled={!file || isProcessing} >
+                          {isProcessing ? <Loader className="h-4 w-4 mr-2 animate-spin"/> : <UploadCloud className="h-4 w-4 mr-2"/>}
+                          {isProcessing ? 'Preparing...' : 'Start Upload'}
+                      </Button>
+                 </CardContent>
+             </Card>
+
+            {/* Step 2: Uploading */}
+            <Card className={cn(stage !== 'uploading' && 'hidden')}>
+                <CardHeader><CardTitle>Uploading {file?.name}...</CardTitle></CardHeader>
+                <CardContent className="space-y-3">
+                    <Progress value={uploadProgress} className="w-full" />
+                    <p className="text-center text-sm">{uploadProgress}% Complete</p>
+                    <Button variant="outline" size="sm" onClick={resetFlow} disabled={!xhrRef.current}>Cancel Upload</Button>
+                </CardContent>
+            </Card>
+
+            {/* Step 3: Metadata */}
+            <Card className={cn(stage !== 'metadata' && 'hidden')}>
+                <CardHeader>
+                    <CardTitle className="flex items-center"><CheckCircle className="h-5 w-5 mr-2 text-green-600" /> Upload Complete - Add Details</CardTitle>
+                </CardHeader>
+                <CardContent>
+                    <form onSubmit={handleSubmit(onMetadataSubmit)} className="space-y-4">
+                         {/* Hidden field for objectKey */}
+                        <input type="hidden" {...register('objectKey')} />
+
+                         {/* Render Metadata Fields (Simplified Example) */}
+                        <div><Label htmlFor="title">Title*</Label><Input id="title" {...register('title', { required: true })} className={cn(errors.title && "border-red-500")}/>{errors.title && <p className='text-xs text-red-500 mt-1'>Title is required.</p>}</div>
+                        <div><Label htmlFor="languageCode">Language Code*</Label><Input id="languageCode" {...register('languageCode', { required: true })} className={cn(errors.languageCode && "border-red-500")} placeholder="e.g., en-US"/>{errors.languageCode && <p className='text-xs text-red-500 mt-1'>Language code is required.</p>}</div>
+                        <div><Label htmlFor="durationMs">Duration (ms)*</Label><Input id="durationMs" type="number" {...register('durationMs', { required: true, min: 1, valueAsNumber: true })} className={cn(errors.durationMs && "border-red-500")} readOnly={!!watch("durationMs")} />{errors.durationMs && <p className='text-xs text-red-500 mt-1'>Valid duration (ms) is required.</p>}</div>
+                        <div><Label htmlFor="level">Level</Label><Select id="level" {...register('level')}><option value="">-- Optional --</option><option>A1</option><option>A2</option><option>B1</option><option>B2</option><option>C1</option><option>C2</option><option>NATIVE</option></Select></div>
+                        <div className="flex items-center space-x-2"><Checkbox id="isPublic" {...register('isPublic')} defaultChecked={true} /><Label htmlFor="isPublic">Publicly Visible</Label></div>
+                        <div><Label htmlFor="description">Description</Label><Textarea id="description" {...register('description')} /></div>
+                        <div><Label htmlFor="tags">Tags (comma-separated)</Label><Input id="tags" {...register('tags')} /></div>
+                        <div><Label htmlFor="coverImageUrl">Cover Image URL</Label><Input id="coverImageUrl" type="url" {...register('coverImageUrl')} placeholder="https://..." /></div>
+
+                        <div className="flex justify-between pt-4">
+                            <Button variant="outline" type="button" onClick={resetFlow} disabled={isProcessing}>Cancel</Button>
+                            <Button type="submit" disabled={isProcessing}>
+                                {isProcessing ? <Loader className="h-4 w-4 mr-2 animate-spin"/> : null}
+                                Create Track
+                            </Button>
+                        </div>
+                    </form>
+                </CardContent>
+            </Card>
+
+            {/* --- Batch Upload Section (Future Implementation) --- */}
+            {/* <Card> ... </Card> */}
 
         </div>
     );

@@ -2,14 +2,16 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { listAdminCollections, type AdminListCollectionsParams } from '@/_services/adminCollectionService'; // Adjust path
+import { listAllCollections, type AdminListCollectionsParams } from '@/_services/adminCollectionService'; // Adjust path
 import type { PaginatedResponseDTO, AudioCollectionResponseDTO } from '@repo/types';
 
 // Query key factory for admin collections
 export const adminCollectionsQueryKeys = {
   all: ['admin', 'collections'] as const,
+  // Ensure params object is stringified or uses a stable reference for caching if needed,
+  // but TanStack Query handles object keys well.
   list: (params: AdminListCollectionsParams) => [...adminCollectionsQueryKeys.all, params] as const,
-  // detail: (collectionId: string) => [...adminCollectionsQueryKeys.all, 'detail', collectionId] as const,
+  detail: (collectionId: string) => [...adminCollectionsQueryKeys.all, 'detail', collectionId] as const,
 };
 
 /**
@@ -23,8 +25,27 @@ export const useAdminCollections = (params: AdminListCollectionsParams) => {
 
   return useQuery<PaginatedResponseDTO<AudioCollectionResponseDTO>, Error>({
     queryKey: queryKey,
-    queryFn: () => listAdminCollections(params), // Call the service function
-    placeholderData: (previousData) => previousData,
+    queryFn: () => listAllCollections(params), // Call the ADMIN service function
+    placeholderData: (previousData) => previousData, // Keep previous data while loading new page
     staleTime: 5 * 60 * 1000, // Example: 5 minutes
+    // Consider adding gcTime if needed
   });
-};
+}
+
+// Optional: Hook for fetching single collection details
+export const useAdminCollection = (collectionId: string | undefined) => {
+    const queryKey = adminCollectionsQueryKeys.detail(collectionId ?? '');
+
+    return useQuery<AudioCollectionResponseDTO, Error>({
+        queryKey: queryKey,
+        queryFn: () => {
+            if (!collectionId) throw new Error("Collection ID is required");
+            // Assuming getAdminCollectionDetails exists in the service
+            // return getAdminCollectionDetails(collectionId);
+            // Placeholder: Implement getAdminCollectionDetails in service
+            return Promise.reject(new Error("getAdminCollectionDetails not implemented"));
+        },
+        enabled: !!collectionId, // Only fetch if ID is valid
+        staleTime: 5 * 60 * 1000,
+    });
+}

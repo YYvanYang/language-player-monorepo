@@ -7,38 +7,44 @@ const sessionOptions = getUserSessionOptions(); // Get user-specific options
 
 /**
  * GET /api/auth/session
- * Checks if a valid user session exists and returns basic user info.
+ * Checks if a valid user session exists and returns basic user info (ID only).
+ * Used by AuthContext to check client-side auth state.
  */
 export async function GET(request: NextRequest) {
-  const response = new NextResponse(null, { status: 200 });
+  // Response must be constructed BEFORE accessing session if using Route Handler context
+  const response = NextResponse.json({ user: null, isAuthenticated: false });
   try {
     const session = await getIronSession<SessionData>(request, response, sessionOptions);
 
     if (!session.userId) {
       // console.log("User Session GET: No userId found.");
-      return NextResponse.json({ user: null, isAuthenticated: false }, { status: 200 });
+      // No need to explicitly return 401, just return unauthenticated state
+      // Session cookie might be cleared/expired, client needs to know they aren't logged in.
+      return NextResponse.json({ user: null, isAuthenticated: false });
     }
 
-    // console.log(`User Session GET: Valid session for userId ${session.userId}`);
+    // User has a valid session according to the cookie
+    // console.log(`User Session GET: Valid session found for userId ${session.userId}`);
     return NextResponse.json({
-      user: { id: session.userId }, // Only return ID needed by AuthContext
+      user: { id: session.userId }, // Only return non-sensitive ID
       isAuthenticated: true,
-    }, { status: 200 }); // Explicitly set status 200
+    });
 
   } catch (error) {
       console.error("User Session GET Error:", error);
-      // Ensure a response is always sent, even on error
-      return NextResponse.json({ message: "Failed to retrieve user session." }, { status: 500 });
+      // Return a generic server error if session handling fails unexpectedly
+      return NextResponse.json({ message: "Failed to retrieve session information." }, { status: 500 });
   }
 }
 
 /**
  * POST /api/auth/session
- * Creates or updates the user session after successful login/registration.
- * Called securely ONLY by Server Actions within this app.
+ * Creates or updates the user session after successful login/registration/callback.
+ * Should ONLY be called securely by Server Actions within this app.
  */
 export async function POST(request: NextRequest) {
-  const response = new NextResponse(null, { status: 200 });
+  // Response must be constructed BEFORE accessing session
+  const response = NextResponse.json({ ok: false }); // Default to failure
   try {
     const body = await request.json();
     const userId = body.userId as string;
@@ -48,15 +54,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ message: 'userId is required' }, { status: 400 });
     }
 
-    // Add basic validation if desired (e.g., UUID format)
+    // Basic UUID validation could be added here if desired
 
     const session = await getIronSession<SessionData>(request, response, sessionOptions);
     session.userId = userId;
-    delete session.isAdmin; // Ensure admin flag isn't carried over if reusing SessionData type
+    // Ensure admin flag is NEVER set for regular user sessions
+    delete session.isAdmin;
     await session.save();
 
     // console.log(`User Session POST: Session saved successfully for userId ${session.userId}`);
-    return NextResponse.json({ ok: true, userId: session.userId }, { status: 200 });
+    // Return success with the user ID confirmed in session
+    return NextResponse.json({ ok: true, userId: session.userId });
 
   } catch (error) {
     console.error("User Session POST Error:", error);
@@ -68,17 +76,18 @@ export async function POST(request: NextRequest) {
 /**
  * DELETE /api/auth/session
  * Destroys the current user session (logout).
- * Called securely ONLY by Server Actions within this app.
+ * Should ONLY be called securely by Server Actions within this app.
  */
 export async function DELETE(request: NextRequest) {
-  const response = new NextResponse(null, { status: 200 });
+  // Prepare response first, session destroy will add headers to it
+  const response = NextResponse.json({ ok: true });
   try {
     const session = await getIronSession<SessionData>(request, response, sessionOptions);
-    session.destroy();
+    await session.destroy(); // Clears session data and sets cookie removal headers
 
     console.log("User Session DELETE: Session destroyed.");
-    // The Set-Cookie header to clear the cookie is added to 'response' by session.destroy/save implicitly
-    return NextResponse.json({ ok: true }, { status: 200 });
+    return response; // Return the response with cookie headers set by iron-session
+
   } catch (error) {
     console.error("User Session DELETE Error:", error);
     const message = error instanceof Error ? error.message : "Failed to destroy user session";

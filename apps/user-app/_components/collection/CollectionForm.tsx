@@ -2,36 +2,40 @@
 'use client';
 
 import React, { useEffect } from 'react';
-import { useForm, Controller } from 'react-hook-form';
+import { useForm, Controller, SubmitHandler } from 'react-hook-form';
 import { useActionState } from 'react';
 import { useFormStatus } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import { Button, Input, Textarea, Select, Label } from '@repo/ui';
 import type {
     AudioCollectionResponseDTO,
-    CreateCollectionRequestDTO, // This includes initialTrackIds now
+    CreateCollectionRequestDTO,
     UpdateCollectionRequestDTO,
     CollectionType,
 } from '@repo/types';
 import {
     createCollectionAction,
     updateCollectionMetadataAction,
-} from '@/_actions/collectionActions'; // Adjust alias
+} from '@/_actions/collectionActions';
 import { cn } from '@repo/utils';
-// Remove CollectionTrackSelector import for now, handle tracks separately
+import { Loader } from 'lucide-react';
 
+// Define the shape of the form data handled by react-hook-form
 interface CollectionFormData {
     title: string;
     description: string;
     type: CollectionType;
-    // initialTrackIds are handled outside this basic form for simplicity
+    // initialTrackIds removed - handle track selection separately
 }
 
 interface CollectionFormProps {
-    initialData?: AudioCollectionResponseDTO | null;
-    onSuccessRedirect?: (collectionId: string) => void; // More flexible redirect/callback
+    initialData?: AudioCollectionResponseDTO | null; // For editing
+    // Callback triggered on successful form submission (create or update)
+    onSuccess?: (collection: AudioCollectionResponseDTO) => void;
+    onCancel?: () => void; // Callback for cancel action
 }
 
+// --- Submit Button Component ---
 function SubmitButton({ isEditing }: { isEditing: boolean }) {
     const { pending } = useFormStatus();
     return (
@@ -43,34 +47,35 @@ function SubmitButton({ isEditing }: { isEditing: boolean }) {
     );
 }
 
-export function CollectionForm({ initialData, onSuccessRedirect }: CollectionFormProps) {
+// --- Main Form Component ---
+export function CollectionForm({ initialData, onSuccess, onCancel }: CollectionFormProps) {
     const router = useRouter();
     const isEditing = !!initialData;
 
     const {
         register,
-        handleSubmit,
+        handleSubmit, // Use RHF's handleSubmit for client-side validation *before* calling the action programmatically
         reset,
-        control,
-        formState: { errors },
+        control, // For Controller component (Select)
+        formState: { errors, isDirty }, // Track errors and changes
     } = useForm<CollectionFormData>({
         defaultValues: {
             title: initialData?.title ?? '',
             description: initialData?.description ?? '',
-            type: (initialData?.type as CollectionType) ?? 'PLAYLIST',
+            type: (initialData?.type as CollectionType) ?? 'PLAYLIST', // Default to PLAYLIST for new
         },
     });
 
-    // Determine the action based on edit mode
+    // Determine the correct server action based on mode
     const actionToCall = isEditing
-        ? updateCollectionMetadataAction.bind(null, initialData!.id)
-        : createCollectionAction;
+        ? (data: CollectionFormData) => updateCollectionMetadataAction(initialData!.id, data) // Pass data directly
+        : (data: CollectionFormData) => createCollectionAction({ ...data, initialTrackIds: [] }); // Create without tracks
 
-    // Prepare the form action using useActionState
-    type FormActionState = { success: boolean; message?: string; collection?: AudioCollectionResponseDTO } | null;
-    const [state, formAction, isPending] = useActionState<FormActionState, FormData>(actionToCall, null);
+    // State for handling server action feedback
+    type ActionState = { success: boolean; message?: string; collection?: AudioCollectionResponseDTO } | null;
+    const [state, submitAction, isPending] = useActionState<ActionState, CollectionFormData>(actionToCall, null);
 
-    // Reset form if initialData changes
+    // Reset form if initialData changes (e.g., navigating between edit pages)
     useEffect(() => {
         if (initialData) {
             reset({ title: initialData.title, description: initialData.description ?? '', type: initialData.type });
@@ -79,41 +84,45 @@ export function CollectionForm({ initialData, onSuccessRedirect }: CollectionFor
         }
     }, [initialData, reset]);
 
-    // Handle success feedback/redirect
+    // Handle success/error feedback after server action completes
     useEffect(() => {
         if (state?.success) {
-            const collectionId = state.collection?.id ?? initialData?.id;
-            if (onSuccessRedirect && collectionId) {
-                onSuccessRedirect(collectionId); // Use callback if provided
-            } else if (collectionId && !isEditing) {
-                router.push(`/collections/${collectionId}`); // Default redirect on create
-            } else if (isEditing) {
-                // Optionally show success message for edits without redirect
-                alert("Collection updated successfully!"); // Replace with toast
+            const collection = state.collection ?? initialData; // Use returned or initial data
+            // Show success feedback (e.g., toast)
+            alert(isEditing ? "Collection updated successfully!" : "Collection created successfully!"); // Replace with toast
+            if (onSuccess && collection) {
+                onSuccess(collection); // Call onSuccess callback if provided
+            } else if (collection?.id && !isEditing) { // Default redirect on create if no callback
+                router.push(`/collections/${collection.id}`);
             }
-            // Reset form on successful creation? Only if not redirecting immediately.
-            // if (!isEditing && !onSuccessRedirect) reset();
+            // Optionally reset form after successful creation if not redirecting
+            // if (!isEditing && !onSuccess) reset();
+        } else if (state && !state.success && state.message) {
+            // Show server-side error (e.g., toast or inline message)
+            console.error("Server Action Error:", state.message);
+            // Error message is displayed below the form using `state.message`
         }
-        // Error messages are displayed below the form
-    }, [state, isEditing, onSuccessRedirect, initialData?.id, router, reset]);
+    }, [state, isEditing, onSuccess, initialData, router, reset]);
 
-    // RHF's handleSubmit isn't used directly when passing action to <form>
-    // const onSubmit: SubmitHandler<CollectionFormData> = data => {
-    //     // Manual action call if not using form action={}
-    // };
+    // RHF's onSubmit handles client validation THEN calls submitAction
+    const onSubmit: SubmitHandler<CollectionFormData> = (data) => {
+        // Client-side validation passed, now call the server action
+        submitAction(data);
+    };
 
     return (
-        // Use formAction from useActionState
-        <form action={formAction} className="space-y-4">
+        // Use RHF's handleSubmit to trigger client validation before calling the action
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
 
             {/* Title Field */}
             <div>
-                <Label htmlFor="title">Title*</Label>
+                <Label htmlFor="title" className={cn(errors.title && "text-red-600")}>Title*</Label>
                 <Input
                     id="title"
-                    {...register('title', { required: 'Title is required', maxLength: { value: 255, message: 'Title too long'} })}
-                    className={cn(errors.title ? 'border-red-500' : '')}
+                    {...register('title', { required: 'Title is required', maxLength: { value: 255, message: 'Title cannot exceed 255 characters'} })}
+                    className={cn("mt-1", errors.title ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : '')}
                     aria-invalid={errors.title ? "true" : "false"}
+                    disabled={isPending}
                 />
                 {errors.title && <p className="text-red-500 text-xs mt-1" role="alert">{errors.title.message}</p>}
             </div>
@@ -125,15 +134,17 @@ export function CollectionForm({ initialData, onSuccessRedirect }: CollectionFor
                     id="description"
                     rows={4}
                     {...register('description')}
-                    className={cn(errors.description ? 'border-red-500' : '')}
-                     aria-invalid={errors.description ? "true" : "false"}
+                    className={cn("mt-1", errors.description ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : '')}
+                    aria-invalid={errors.description ? "true" : "false"}
+                    disabled={isPending}
                 />
                 {errors.description && <p className="text-red-500 text-xs mt-1" role="alert">{errors.description.message}</p>}
             </div>
 
             {/* Type Field */}
             <div>
-                <Label htmlFor="type">Collection Type*</Label>
+                <Label htmlFor="type" className={cn(errors.type && "text-red-600")}>Collection Type*</Label>
+                {/* Use Controller for integrating non-standard inputs like Select with RHF */}
                 <Controller
                     name="type"
                     control={control}
@@ -141,9 +152,10 @@ export function CollectionForm({ initialData, onSuccessRedirect }: CollectionFor
                     render={({ field }) => (
                         <Select
                             id="type"
-                            {...field}
-                            className={cn("mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50", errors.type ? 'border-red-500' : '')}
+                            {...field} // Spread field props (value, onChange, onBlur)
+                            className={cn("mt-1 block w-full", errors.type ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : '')}
                             aria-invalid={errors.type ? "true" : "false"}
+                            disabled={isPending}
                         >
                             <option value="PLAYLIST">Playlist</option>
                             <option value="COURSE">Course</option>
@@ -153,14 +165,22 @@ export function CollectionForm({ initialData, onSuccessRedirect }: CollectionFor
                 {errors.type && <p className="text-red-500 text-xs mt-1" role="alert">{errors.type.message}</p>}
             </div>
 
-            {/* Display Server Action Error */}
+            {/* Display Server Action Error Message (if not handled by toasts) */}
             {state && !state.success && state.message && (
-                <p className="text-red-500 text-sm p-3 bg-red-50 border border-red-200 rounded" role="alert">
+                <p className="text-red-600 text-sm p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded" role="alert">
                     {state.message}
                 </p>
             )}
 
-            <div className="flex justify-end pt-2">
+            {/* Action Buttons */}
+            <div className="flex justify-end items-center gap-3 pt-4 border-t dark:border-slate-700">
+                 {/* Allow Cancel button only if callback provided */}
+                 {onCancel && (
+                     <Button variant="outline" type="button" onClick={onCancel} disabled={isPending}>
+                         Cancel
+                     </Button>
+                 )}
+                {/* SubmitButton uses useFormStatus which is tied to the <form> */}
                 <SubmitButton isEditing={isEditing} />
             </div>
         </form>

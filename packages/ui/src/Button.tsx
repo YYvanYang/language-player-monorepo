@@ -1,20 +1,20 @@
 // packages/ui/src/Button.tsx
-'use client'; // Assume buttons need onClick -> make them client components
+'use client';
 
 import * as React from "react";
-import { Slot } from "@radix-ui/react-slot"; // For composition if using Radix later
-import { cva, type VariantProps } from "class-variance-authority"; // For variant styles
+import { Slot } from "@radix-ui/react-slot";
+import { cva, type VariantProps } from "class-variance-authority";
+import { cn } from "@repo/utils"; // Use shared cn utility
 
-// Example using CVA for button variants - install class-variance-authority
-// pnpm add class-variance-authority --filter @repo/ui
+// Define button variants using CVA
 const buttonVariants = cva(
-  "inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
+  "inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ring-offset-background disabled:pointer-events-none disabled:opacity-50",
   {
     variants: {
       variant: {
         default: "bg-primary text-primary-foreground hover:bg-primary/90",
         destructive: "bg-destructive text-destructive-foreground hover:bg-destructive/90",
-        outline: "border border-input bg-background hover:bg-accent hover:text-accent-foreground",
+        outline: "border border-input hover:bg-accent hover:text-accent-foreground",
         secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/80",
         ghost: "hover:bg-accent hover:text-accent-foreground",
         link: "text-primary underline-offset-4 hover:underline",
@@ -23,7 +23,7 @@ const buttonVariants = cva(
         default: "h-10 px-4 py-2",
         sm: "h-9 rounded-md px-3",
         lg: "h-11 rounded-md px-8",
-        icon: "h-10 w-10",
+        icon: "h-9 w-9", // Adjusted default icon size
       },
     },
     defaultVariants: {
@@ -36,19 +36,15 @@ const buttonVariants = cva(
 export interface ButtonProps
   extends React.ButtonHTMLAttributes<HTMLButtonElement>,
     VariantProps<typeof buttonVariants> {
-  asChild?: boolean; // For using Slot
+  asChild?: boolean; // Allow rendering as a different element (e.g., Link)
 }
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   ({ className, variant, size, asChild = false, ...props }, ref) => {
     const Comp = asChild ? Slot : "button";
-    // Need a utility like cn() (from shadcn/ui or build your own) to merge classes
-    // For simplicity now, just pass className directly, assuming no conflicts
-    const combinedClassName = `${buttonVariants({ variant, size })} ${className || ''}`;
-
     return (
       <Comp
-        className={combinedClassName} // Use combined class name
+        className={cn(buttonVariants({ variant, size, className }))} // Use cn helper
         ref={ref}
         {...props}
       />
@@ -57,4 +53,4 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
 );
 Button.displayName = "Button";
 
-export { Button, buttonVariants }; // Export variants if needed elsewhere
+export { Button, buttonVariants };

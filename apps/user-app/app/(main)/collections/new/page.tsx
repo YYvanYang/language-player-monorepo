@@ -1,28 +1,51 @@
 // apps/user-app/app/(main)/collections/new/page.tsx
-import React from 'react';
-import { CollectionForm } from '@/_components/collection/CollectionForm'; // Adjust alias
-import Link from 'next/link';
+'use client'; // Form interaction requires client component
 
-export const metadata = {
-    title: 'Create New Collection',
-};
+import React from 'react';
+import { useRouter } from 'next/navigation';
+import { CollectionForm } from '@/_components/collection/CollectionForm';
+import Link from 'next/link';
+import { Button } from '@repo/ui';
+import { ArrowLeft } from 'lucide-react';
+import type { AudioCollectionResponseDTO } from '@repo/types';
+
+// Note: Metadata can still be defined in Server Components, but this page needs to be client-rendered
+// export const metadata = {
+//     title: 'Create New Collection - AudioLang Player',
+// };
 
 export default function CreateCollectionPage() {
+    const router = useRouter();
+
+    const handleSuccess = (createdCollection?: AudioCollectionResponseDTO) => {
+         // Redirect to the newly created collection's page
+         if (createdCollection?.id) {
+             alert("Collection created!"); // Replace with toast
+             router.push(`/collections/${createdCollection.id}`);
+         } else {
+             // Fallback redirect if ID isn't returned (shouldn't happen ideally)
+             router.push('/collections');
+         }
+     };
+
+     const handleCancel = () => {
+         router.back(); // Or redirect to /collections
+     };
+
     return (
-        <div>
-             <nav className="text-sm mb-4" aria-label="Breadcrumb">
-                <ol className="list-none p-0 inline-flex">
-                     <li className="flex items-center">
-                        <Link href="/collections" className="text-blue-600 hover:underline">Collections</Link>
-                         <svg className="fill-current w-3 h-3 mx-3" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><path d="M285.476 272.971L91.132 467.314c-9.373 9.373-24.569 9.373-33.941 0l-22.667-22.667c-9.357-9.357-9.375-24.522-.04-33.901L188.505 256 34.484 101.255c-9.335-9.379-9.317-24.544.04-33.901l22.667-22.667c9.373-9.373 24.569-9.373 33.941 0L285.475 239.03c9.373 9.372 9.373 24.568.001 33.941z"/></svg>
-                     </li>
-                     <li>
-                        <span className="text-gray-500">Create New</span>
-                     </li>
-                </ol>
-            </nav>
-            {/* CollectionForm is a client component handling the form logic and action */}
-            <CollectionForm />
+        <div className="container mx-auto py-6">
+            <Button variant="outline" size="sm" asChild className="mb-4">
+                <Link href="/collections"><ArrowLeft size={16} className="mr-1"/> Back to Collections</Link>
+            </Button>
+            <h1 className="text-2xl font-bold mb-6">Create New Collection</h1>
+
+            <div className="p-4 md:p-6 border rounded-lg bg-white dark:bg-slate-800 shadow-sm max-w-2xl">
+                {/* CollectionForm handles the server action call */}
+                <CollectionForm
+                    onSuccess={handleSuccess}
+                    onCancel={handleCancel}
+                />
+            </div>
         </div>
     );
 }

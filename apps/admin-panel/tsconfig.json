@@ -1,35 +1,33 @@
-// apps/user-app/tsconfig.json
+// apps/admin-panel/tsconfig.json
 {
   "extends": "../../packages/tsconfig/base.json", // Extend the root base config
   "compilerOptions": {
     "plugins": [{ "name": "next" }],
     "baseUrl": ".", // Set base URL for this app
     "paths": {
-      // Keep the alias configured during create-next-app
-      "@/*": ["./*"]
+      "@/*": ["./*"] // Standard alias for app-specific paths
     },
-    // Next.js specific overrides if needed (usually inherited)
-    "allowJs": true, // Next.js default
+    "jsx": "preserve", // Required for Next.js App Router
+    "allowJs": true,
     "incremental": true,
     "noEmit": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "jsx": "preserve" // Keep preserve
+    "types": ["node", "@types/react", "@types/react-dom"] // Add specific types if needed
   },
   "include": [
     "next-env.d.ts",
     "**/*.ts",
     "**/*.tsx",
     ".next/types/**/*.ts",
-     // Ensure paths cover your _ directories
+    // Ensure paths cover your _ directories
     "_actions/**/*.ts",
     "_components/**/*.tsx",
-    "_context/**/*.tsx",
+    "_context/**/*.tsx", // If context is used
     "_hooks/**/*.ts",
-    "_lib/**/*.ts",
+    "_lib/**/*.ts", // If lib is used
     "_services/**/*.ts",
-    "_stores/**/*.ts",
-    "_types/**/*.ts"
+    "_stores/**/*.ts" // If stores are used
   ],
   "exclude": ["node_modules"]
 }

@@ -3,12 +3,11 @@
 
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
-import { cookies } from 'next/headers'; // To potentially read/clear cookies if needed server-side directly (alternative to fetch)
 import apiClient, { APIError } from '@repo/api-client';
-import type { LoginRequestDTO } from '@repo/types'; // Using shared Login DTO
-// Import session library for direct use if preferred over fetch
-// import { getIronSession } from 'iron-session';
-// import { adminSessionOptions } from '../app/api/auth/session/route'; // Adjust path if exporting options
+import type { LoginRequestDTO, UserResponseDTO } from '@repo/types'; // Using shared Login DTO
+import { getAdminSessionOptions, SessionData } from '@repo/auth'; // Use admin options
+import { getIronSession } from 'iron-session';
+import { cookies } from 'next/headers'; // Import cookies
 
 // Define return type for useActionState
 interface AdminAuthResult {
@@ -17,20 +16,53 @@ interface AdminAuthResult {
 }
 
 // Define the expected structure of the SUCCESSFUL response from the Go backend's ADMIN login endpoint
-// Adjust this based on your actual Go API response structure
+// NOTE: Adjust this if your backend admin login returns different fields
 interface GoAdminLoginSuccessResponse {
-    userId: string;
-    isAdmin: boolean; // Crucial: Backend must confirm admin status
-    token?: string; // Optional: Backend might return its own token, but we rely on session cookie here
-    // Add other relevant fields like name, email if needed
+    // Assuming admin login returns user details similar to regular login,
+    // plus potentially specific admin flags/roles if not derived from session.
+    accessToken: string; // We don't use this directly, but backend sends it
+    refreshToken: string; // We don't use this directly
+    user: UserResponseDTO; // Contains user ID and potentially isAdmin flag from DB
 }
 
+// Helper to call the internal session API route (POST)
+async function setAdminSession(userId: string, isAdminConfirmed: boolean): Promise<boolean> {
+    // Server Actions run on the server, directly call getIronSession
+    if (!isAdminConfirmed) {
+        console.warn("Admin Auth Action: Attempted to set session for non-admin user.");
+        return false; // Don't set session if backend didn't confirm admin
+    }
+    try {
+        // Set session directly in the Server Action context
+        const session = await getIronSession<SessionData>(cookies(), getAdminSessionOptions());
+        session.userId = userId;
+        session.isAdmin = true; // Explicitly set admin flag
+        await session.save();
+        console.log("Admin Auth Action: Admin session saved directly for userId:", userId);
+        return true;
+    } catch (error) {
+        console.error("Admin Auth Action: Error saving admin session directly:", error);
+        return false;
+    }
+}
+
+// Helper to clear the admin session cookie directly
+async function clearAdminSession(): Promise<boolean> {
+     try {
+        const session = await getIronSession<SessionData>(cookies(), getAdminSessionOptions());
+        session.destroy();
+        console.log("Admin Auth Action: Admin session destroyed directly.");
+        return true;
+    } catch (error) {
+        console.error("Admin Auth Action: Error destroying admin session directly:", error);
+        return false;
+    }
+}
 
 export async function adminLoginAction(previousState: AdminAuthResult | null, formData: FormData): Promise<AdminAuthResult> {
     const email = formData.get('email') as string;
     const password = formData.get('password') as string;
 
-    // Basic server-side validation
     if (!email || !password) {
         return { success: false, message: 'Email and password are required.' };
     }
@@ -39,109 +71,48 @@ export async function adminLoginAction(previousState: AdminAuthResult | null, fo
         const loginData: LoginRequestDTO = { email, password };
 
         // 1. Call the Go backend's ADMIN login endpoint
-        // Replace '/admin/auth/login' with your actual admin login endpoint
+        // NOTE: Update '/admin/auth/login' if your backend uses a different path
         const adminAuthResponse = await apiClient<GoAdminLoginSuccessResponse>('/admin/auth/login', {
             method: 'POST',
             body: JSON.stringify(loginData),
         });
 
-        // 2. Verify backend confirmed admin status
-        if (!adminAuthResponse?.userId || !adminAuthResponse?.isAdmin) {
-             // Log this serious issue - backend didn't confirm admin status!
+        // 2. Verify backend confirmed admin status (adjust based on backend response)
+        // Assuming the backend includes user details with an isAdmin flag or similar
+        const user = adminAuthResponse?.user;
+        if (!user?.id || user?.isAdmin !== true) {
              console.error(`Admin login error: Backend response missing userId or isAdmin flag for email: ${email}`);
-             return { success: false, message: 'Login failed: Invalid admin credentials or permissions.' };
+             return { success: false, message: 'Login failed: User not found or is not an administrator.' };
         }
 
-        // 3. Call THIS admin panel's session API route handler to set the cookie
-        // Use absolute URL if running in different environments or use env var for app URL
-        // Ensure NEXT_PUBLIC_ADMIN_APP_URL is set appropriately in your environment
-         const appUrl = process.env.NEXT_PUBLIC_ADMIN_APP_URL || 'http://localhost:3001'; // Default to common admin port if not set
-         const sessionResponse = await fetch(`${appUrl}/api/auth/session`, { // Fetch THIS app's API route
-             method: 'POST',
-             headers: { 'Content-Type': 'application/json' },
-             // Send data needed to set the session, INCLUDING isAdmin flag
-             body: JSON.stringify({
-                userId: adminAuthResponse.userId,
-                isAdmin: true // We trust the backend confirmation here
-                // Add other session data if needed
-            }),
-         });
-
-         if (!sessionResponse.ok) {
-             const errorBody = await sessionResponse.text();
-             console.error(`Admin login error: Failed to set session cookie via API route. Status: ${sessionResponse.status}, Body: ${errorBody}`);
-             throw new Error(`Failed to set session cookie (status: ${sessionResponse.status}).`);
+        // 3. Set the admin session cookie directly in the server action
+        const sessionSet = await setAdminSession(user.id, true); // Pass admin confirmation
+         if (!sessionSet) {
+             console.error(`Admin login error: Failed to set session cookie for userId: ${user.id}`);
+             return { success: false, message: 'Login failed: Could not save session state.' };
          }
 
-        // Session cookie should be set now by the Route Handler's response
-
-        // 4. Revalidate and prepare success state (don't redirect here)
-        revalidatePath('/', 'layout'); // Revalidate admin layout
-        console.log(`Admin user ${adminAuthResponse.userId} logged in successfully.`);
-        return { success: true };
+        // 4. Revalidate and prepare success state
+        revalidatePath('/', 'layout'); // Revalidate admin layout/dashboard
+        console.log(`Admin user ${user.id} logged in successfully.`);
+        return { success: true }; // Redirect happens in the component useEffect
 
     } catch (error) {
         console.error("Admin Login Action Error:", error);
         if (error instanceof APIError) {
-            // Map specific backend errors
-            if (error.status === 401) { // Unauthorized from Go backend
-                return { success: false, message: 'Invalid email or password.' };
-            }
-            if (error.status === 403) { // Forbidden from Go backend (maybe not admin?)
-                return { success: false, message: 'Access denied. User is not an administrator.' };
-            }
-            // General API error
+            if (error.status === 401) return { success: false, message: 'Invalid email or password.' };
+            if (error.status === 403) return { success: false, message: 'Access denied. Ensure user has admin privileges.' };
             return { success: false, message: `Login failed: ${error.message}` };
         }
-        // Handle fetch errors to session API or other unexpected errors
         return { success: false, message: `An unexpected error occurred during login: ${error instanceof Error ? error.message : 'Unknown error'}` };
     }
 }
 
 export async function adminLogoutAction() {
-    // Call THIS admin panel's session API route handler to clear the cookie
-     const appUrl = process.env.NEXT_PUBLIC_ADMIN_APP_URL || 'http://localhost:3001';
-    try {
-         const response = await fetch(`${appUrl}/api/auth/session`, { method: 'DELETE' });
-         if (!response.ok) {
-             console.error("Admin logout error: Failed to clear session via API route. Status:", response.status);
-             // Proceed with redirect anyway? Best effort logout.
-         } else {
-             console.log("Admin session cleared successfully via API route.");
-         }
-    } catch (error) {
-         console.error("Admin logout error: Fetching session API route failed:", error);
-         // Proceed with redirect anyway?
-    }
-
-
-    // Alternative: Use iron-session directly if preferred and options are accessible
-    // try {
-    //     const session = await getIronSession<SessionData>(cookies(), adminSessionOptions);
-    //     session.destroy();
-    //     console.log("Admin session destroyed directly.");
-    // } catch (error) {
-    //     console.error("Admin logout error: Failed to destroy session directly:", error);
-    // }
-
+    // Clear the session cookie directly
+    await clearAdminSession();
 
     // Revalidate paths relevant after logout and redirect to admin login
     revalidatePath('/', 'layout'); // Revalidate the whole admin layout
     redirect('/login'); // Redirect to admin login page
 }
-
-// --- Helper Function (if not using direct iron-session) ---
-// NOTE: This helper is primarily for use within the action itself if needed,
-//       but verifyAdmin above is likely sufficient.
-// async function getAdminSessionData(): Promise<SessionData | null> {
-//     try {
-//         const session = await getIronSession<SessionData>(cookies(), adminSessionOptions);
-//         if (!session.userId || !session.isAdmin) {
-//             return null;
-//         }
-//         return session;
-//     } catch (error) {
-//         console.error("Error getting admin session data in action:", error);
-//         return null;
-//     }
-// }

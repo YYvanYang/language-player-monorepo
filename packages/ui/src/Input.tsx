@@ -1,17 +1,27 @@
+// packages/ui/src/Input.tsx
 import * as React from "react";
-import { cn } from "@repo/utils"; // Assuming you have cn utility in @repo/utils
+import { cn } from "@repo/utils"; // Use shared util
 
 export interface InputProps
-  extends React.InputHTMLAttributes<HTMLInputElement> {}
+  extends React.InputHTMLAttributes<HTMLInputElement> {
+    // Add size variants if needed
+    size?: 'default' | 'sm' | 'lg';
+}
 
 const Input = React.forwardRef<HTMLInputElement, InputProps>(
-  ({ className, type, ...props }, ref) => {
+  ({ className, type, size = 'default', ...props }, ref) => {
+    const sizeClasses = {
+        sm: 'h-8 px-2 text-xs',
+        default: 'h-10 px-3 py-2 text-sm',
+        lg: 'h-11 px-4 text-base',
+    };
     return (
       <input
         type={type}
         className={cn(
-          "flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50",
-          className
+          "flex w-full rounded-md border border-input bg-background ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50",
+          sizeClasses[size], // Apply size class
+          className // Allow overriding
         )}
         ref={ref}
         {...props}
@@ -21,4 +31,4 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
 );
 Input.displayName = "Input";
 
-export { Input }; 
+export { Input };

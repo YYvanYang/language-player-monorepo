@@ -6,50 +6,30 @@ import { revalidateTag, revalidatePath } from 'next/cache';
 import apiClient, { APIError } from '@repo/api-client';
 import type {
     AudioCollectionResponseDTO,
-    CreateCollectionRequestDTO, // Assuming admin uses the same creation DTO
+    CreateCollectionRequestDTO,
     UpdateCollectionRequestDTO,
-    UpdateCollectionTracksRequestDTO
+    UpdateCollectionTracksRequestDTO,
 } from '@repo/types';
+import { getAdminSessionOptions, SessionData } from '@repo/auth'; // Use admin options
 import { getIronSession } from 'iron-session';
-import type { SessionData } from '@repo/auth'; // Or define locally
-
-// --- Session Options (Admin) ---
-// !! IMPORTANT: Ensure these EXACTLY match the ones in admin middleware and session route !!
-const adminSessionOptions = {
-    cookieName: process.env.ADMIN_SESSION_NAME || 'admin_panel_auth_session',
-    password: process.env.ADMIN_SESSION_SECRET!, // MUST be set
-    cookieOptions: {
-        secure: process.env.NODE_ENV === 'production',
-        httpOnly: true,
-        sameSite: 'strict', // Recommended for admin
-        maxAge: undefined, // Session cookie
-    },
-};
-if (!adminSessionOptions.password) {
-    throw new Error("ADMIN_SESSION_SECRET environment variable is not set for server actions!");
-}
-// --- End Session Options ---
 
 // --- Helper to verify admin status ---
-async function verifyAdmin(): Promise<{ isAdmin: boolean; userId?: string }> {
+async function verifyAdmin(): Promise<boolean> {
     try {
-        const session = await getIronSession<SessionData>(cookies(), adminSessionOptions);
-        const isAdmin = session.userId != null && session.userId != "" && session.isAdmin === true;
-        return { isAdmin, userId: session.userId };
-    } catch (error) {
-        console.error("Error verifying admin session in action:", error);
-        return { isAdmin: false };
-    }
+       const session = await getIronSession<SessionData>(cookies(), getAdminSessionOptions());
+       return session.userId != null && session.userId !== "" && session.isAdmin === true;
+    } catch { return false; }
 }
+// --- End Helper ---
 
 // --- Action Result Types ---
-interface AdminActionResult { success: boolean; message?: string; }
-interface AdminCollectionResult extends AdminActionResult { collection?: AudioCollectionResponseDTO; }
+export interface AdminActionResult { success: boolean; message?: string; }
+export interface AdminCollectionResult extends AdminActionResult { collection?: AudioCollectionResponseDTO; }
 
 // --- Action: Create Collection ---
 // Note: Admin might have different validation or default settings than user creation
 export async function createCollectionAction(requestData: CreateCollectionRequestDTO): Promise<AdminCollectionResult> {
-    const { isAdmin } = await verifyAdmin();
+    const isAdmin = await verifyAdmin();
     if (!isAdmin) { return { success: false, message: "Permission denied." }; }
 
     // Basic server-side validation
@@ -59,7 +39,7 @@ export async function createCollectionAction(requestData: CreateCollectionReques
     if (requestData.type !== "COURSE" && requestData.type !== "PLAYLIST") {
         return { success: false, message: "Invalid collection type." };
     }
-    // Could add validation for initialTrackIds format here if needed
+    // TODO: Add validation for initialTrackIds format here if needed
 
     try {
         // Assuming a dedicated admin endpoint `/admin/audio/collections`
@@ -77,7 +57,7 @@ export async function createCollectionAction(requestData: CreateCollectionReques
         console.error(`Admin error creating collection:`, error);
         if (error instanceof APIError) {
             // Handle specific backend errors if applicable
-            if (error.status === 400 && error.message.includes('track IDs do not exist')) {
+            if (error.status === 400 && error.message?.includes('track IDs do not exist')) {
                  return { success: false, message: 'One or more initial tracks could not be found.' };
             }
             if (error.status === 403) { return { success: false, message: "Permission denied by backend." }; }
@@ -89,23 +69,27 @@ export async function createCollectionAction(requestData: CreateCollectionReques
 
 // --- Action: Update Collection Metadata ---
 export async function updateCollectionMetadataAction(collectionId: string, requestData: UpdateCollectionRequestDTO): Promise<AdminActionResult> {
-    const { isAdmin } = await verifyAdmin();
+    const isAdmin = await verifyAdmin();
     if (!isAdmin) { return { success: false, message: "Permission denied." }; }
     if (!collectionId) { return { success: false, message: "Collection ID is required." }; }
-    if (!requestData.title && requestData.description == null) { // Check if description is explicitly null too
+    // Allow updating title/description to empty string, but ensure at least one field is attempted to be updated
+    if (requestData.title === undefined && requestData.description === undefined) {
          return { success: false, message: "No update data provided (title or description required)."};
     }
 
     try {
         // Assuming endpoint `/admin/audio/collections/{collectionId}` for metadata update
-        await apiClient<void>(`/admin/audio/collections/${collectionId}`, {
+        // Backend likely returns 204 No Content or the updated resource
+        await apiClient<void | AudioCollectionResponseDTO>(`/admin/audio/collections/${collectionId}`, {
             method: 'PUT',
             body: JSON.stringify(requestData),
         });
 
         revalidateTag('admin-collections'); // Invalidate list view
         revalidateTag(`admin-collection-${collectionId}`); // Invalidate detail view/cache
+        revalidatePath(`/collections/${collectionId}/edit`); // Invalidate edit page path
         revalidatePath(`/collections/${collectionId}`); // Invalidate detail page path
+
 
         console.log(`Admin updated collection metadata ${collectionId}`);
         return { success: true, message: "Collection updated successfully." };
@@ -124,13 +108,14 @@ export async function updateCollectionMetadataAction(collectionId: string, reque
 
 // --- Action: Update Collection Tracks ---
 export async function updateCollectionTracksAction(collectionId: string, requestData: UpdateCollectionTracksRequestDTO): Promise<AdminActionResult> {
-    const { isAdmin } = await verifyAdmin();
+    const isAdmin = await verifyAdmin();
     if (!isAdmin) { return { success: false, message: "Permission denied." }; }
     if (!collectionId) { return { success: false, message: "Collection ID is required." }; }
-    // Add validation for UUIDs in requestData.orderedTrackIds if needed
+    // TODO: Add validation for UUIDs in requestData.orderedTrackIds if needed
 
     try {
         // Assuming endpoint `/admin/audio/collections/{collectionId}/tracks`
+        // Backend likely returns 204 No Content
         await apiClient<void>(`/admin/audio/collections/${collectionId}/tracks`, {
             method: 'PUT',
             body: JSON.stringify(requestData),
@@ -157,16 +142,17 @@ export async function updateCollectionTracksAction(collectionId: string, request
 
 // --- Action: Delete Collection ---
 export async function deleteCollectionAction(collectionId: string): Promise<AdminActionResult> {
-    const { isAdmin } = await verifyAdmin();
+    const isAdmin = await verifyAdmin();
     if (!isAdmin) { return { success: false, message: "Permission denied." }; }
     if (!collectionId) { return { success: false, message: "Collection ID is required." }; }
 
     try {
         // Assuming endpoint `/admin/audio/collections/{collectionId}`
+        // Backend returns 204 No Content
         await apiClient<void>(`/admin/audio/collections/${collectionId}`, { method: 'DELETE' });
 
         revalidateTag('admin-collections'); // Invalidate list view
-        revalidatePath(`/collections/${collectionId}`); // Invalidate detail page path
+        revalidatePath(`/collections/${collectionId}`); // Invalidate detail page path (it will 404 now)
 
         console.log(`Admin deleted collection ${collectionId}`);
         return { success: true, message: "Collection deleted successfully." };

@@ -1,1 +1,15 @@
-{ "name": "eslint-config-custom", "version": "0.0.0", "private": true, "main": "index.js" }
+{
+    "name": "eslint-config-custom",
+    "version": "0.0.0",
+    "private": true,
+    "main": "index.js",
+    "devDependencies": {
+      "@typescript-eslint/eslint-plugin": "^7.18.0",
+      "@typescript-eslint/parser": "^7.18.0",
+      "eslint-config-next": "15.2.4",
+      "eslint-plugin-react": "^7.35.0",
+      "eslint-plugin-react-hooks": "^4.6.2",
+      "eslint-plugin-tailwindcss": "^3.17.4",
+      "eslint": "^9.0.0"
+    }
+  }

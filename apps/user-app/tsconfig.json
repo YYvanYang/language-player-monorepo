@@ -5,23 +5,23 @@
     "plugins": [{ "name": "next" }],
     "baseUrl": ".", // Set base URL for this app
     "paths": {
-      // Keep the alias configured during create-next-app
-      "@/*": ["./*"]
+      "@/*": ["./*"] // Standard alias for app-specific paths
     },
-    // Next.js specific overrides if needed (usually inherited)
-    "allowJs": true, // Next.js default
+    "jsx": "preserve", // Required for Next.js App Router
+    "lib": ["dom", "dom.iterable", "esnext"], // Ensure DOM libs are included
+    "allowJs": true,
     "incremental": true,
     "noEmit": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "jsx": "preserve" // Keep preserve
+    "types": ["node", "@types/react", "@types/react-dom"] // Add specific types if needed
   },
   "include": [
     "next-env.d.ts",
     "**/*.ts",
     "**/*.tsx",
     ".next/types/**/*.ts",
-     // Ensure paths cover your _ directories
+    // Ensure paths cover your _ directories
     "_actions/**/*.ts",
     "_components/**/*.tsx",
     "_context/**/*.tsx",
@@ -29,7 +29,7 @@
     "_lib/**/*.ts",
     "_services/**/*.ts",
     "_stores/**/*.ts",
-    "_types/**/*.ts"
+    "_types/**/*.ts" // If you have app-specific types
   ],
   "exclude": ["node_modules"]
 }

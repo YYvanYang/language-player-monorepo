@@ -1,48 +1,63 @@
-// apps/user-app/_components/collection/CollectionTrackSelector.tsx (Conceptual)
+// apps/user-app/_components/collection/CollectionTrackSelector.tsx
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { useDebounce } from '@/_hooks/useDebounce'; // Assuming you have this hook
-import { listTracks } from '@/_services/trackService'; // Need service to search tracks
-import type { AudioTrackResponseDTO } from '@repo/types';
-import { Input, Checkbox, Label, Spinner } from '@repo/ui'; // Assuming Checkbox exists
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { useDebounce } from '@repo/utils'; // Use shared hook if available, or local one
+import { listTracks } from '@/_services/trackService'; // User track service
+import type { AudioTrackResponseDTO, ListTrackQueryParams } from '@repo/types';
+import { Input, Checkbox, Label, Spinner, Button } from '@repo/ui';
+import { X as IconX, Search, ListPlus, Check } from 'lucide-react';
+import { cn } from '@repo/utils';
+
+// Query key factory for track search
+const trackSearchQueryKeys = {
+    search: (term: string) => ['tracks', 'search', term] as const,
+};
 
 interface CollectionTrackSelectorProps {
-    name: string; // Name for hidden inputs
-    disabled?: boolean;
+    // IDs of tracks already in the collection (to disable selection)
+    existingTrackIds?: string[];
+    // Callback when tracks are selected/deselected to be added
+    onTracksSelected: (selectedIds: string[]) => void;
+    disabled?: boolean; // Disable the whole component
 }
 
-export function CollectionTrackSelector({ name, disabled }: CollectionTrackSelectorProps) {
+export function CollectionTrackSelector({
+    existingTrackIds = [],
+    onTracksSelected,
+    disabled = false
+}: CollectionTrackSelectorProps) {
     const [searchTerm, setSearchTerm] = useState('');
     const [searchResults, setSearchResults] = useState<AudioTrackResponseDTO[]>([]);
-    const [selectedTrackIds, setSelectedTrackIds] = useState<Set<string>>(new Set());
-    const [isLoading, setIsLoading] = useState(false);
-    const debouncedSearchTerm = useDebounce(searchTerm, 500); // Debounce search input
+    // Store IDs of tracks selected *in this component instance*
+    const [newlySelectedIds, setNewlySelectedIds] = useState<Set<string>>(new Set());
+    const debouncedSearchTerm = useDebounce(searchTerm, 400);
 
+    const existingIdsSet = useMemo(() => new Set(existingTrackIds), [existingTrackIds]);
+
+    // Fetch search results using TanStack Query
+    const { data: searchData, isLoading, isFetching, isError, error } = useQuery({
+        queryKey: trackSearchQueryKeys.search(debouncedSearchTerm),
+        queryFn: async () => {
+            if (!debouncedSearchTerm.trim()) return { data: [], total: 0 }; // Return empty if no search term
+            const params: ListTrackQueryParams = { q: debouncedSearchTerm, limit: 20 }; // Limit results
+            // Assuming listTracks service function exists and works
+            return listTracks(params);
+        },
+        enabled: !!debouncedSearchTerm.trim(), // Only fetch when search term is present
+        placeholderData: (prev) => prev,
+        staleTime: 5 * 60 * 1000, // Cache search results for 5 mins
+    });
+
+    // Update local results state when query data changes
     useEffect(() => {
-        // Fetch tracks when debounced search term changes
-        const fetchResults = async () => {
-            if (!debouncedSearchTerm) {
-                setSearchResults([]);
-                return;
-            }
-            setIsLoading(true);
-            try {
-                // Fetch with search query, maybe limit results
-                const result = await listTracks({ q: debouncedSearchTerm, limit: 15 });
-                setSearchResults(result.data);
-            } catch (error) {
-                console.error("Failed to search tracks:", error);
-                setSearchResults([]); // Clear results on error
-            } finally {
-                setIsLoading(false);
-            }
-        };
-        fetchResults();
-    }, [debouncedSearchTerm]);
+        setSearchResults(searchData?.data ?? []);
+    }, [searchData]);
 
-    const handleSelect = (trackId: string, isSelected: boolean) => {
-        setSelectedTrackIds(prev => {
+    // Handle checkbox change for newly selected tracks
+    const handleSelect = useCallback((trackId: string, isSelected: boolean) => {
+        setNewlySelectedIds(prev => {
             const newSet = new Set(prev);
             if (isSelected) {
                 newSet.add(trackId);
@@ -51,47 +66,83 @@ export function CollectionTrackSelector({ name, disabled }: CollectionTrackSelec
             }
             return newSet;
         });
+    }, []);
+
+    // Handle adding selected tracks
+    const handleAddSelected = () => {
+        onTracksSelected(Array.from(newlySelectedIds));
+        // Clear selection and search after adding
+        setNewlySelectedIds(new Set());
+        setSearchTerm('');
+        setSearchResults([]);
     };
 
+    const isSearching = isLoading || isFetching;
+
     return (
-        <div className="space-y-2 border p-4 rounded bg-gray-50">
-            <Label>Add Initial Tracks (Optional)</Label>
-            <Input
-                type="search"
-                placeholder="Search tracks by title..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                disabled={disabled}
-            />
+        <div className={cn("space-y-3 border p-3 rounded bg-slate-50 dark:bg-slate-800/50", disabled && "opacity-70 pointer-events-none")}>
+            <Label className="text-sm font-medium" htmlFor="track-search-input">Add Tracks to Collection</Label>
+            <div className="relative">
+                <Input
+                    id="track-search-input"
+                    type="search"
+                    placeholder="Search tracks by title..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    disabled={disabled || isSearching}
+                    className="pl-8"
+                />
+                <Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                 {isSearching && <Spinner size="sm" className="absolute right-2 top-1/2 -translate-y-1/2" />}
+            </div>
 
-            {/* Hidden inputs for selected track IDs */}
-            {Array.from(selectedTrackIds).map(id => (
-                <input key={id} type="hidden" name={name} value={id} />
-            ))}
+            {isError && (
+                 <p className="text-xs text-red-600">Error searching: {error instanceof Error ? error.message : 'Unknown error'}</p>
+             )}
 
-            {isLoading && <div className="text-center p-2"><Spinner /> Searching...</div>}
-
-            {!isLoading && searchResults.length > 0 && (
-                <div className="max-h-48 overflow-y-auto border rounded bg-white p-2 space-y-1">
-                    {searchResults.map(track => (
-                        <div key={track.id} className="flex items-center space-x-2">
-                            <Checkbox
-                                id={`track-select-${track.id}`}
-                                checked={selectedTrackIds.has(track.id)}
-                                onCheckedChange={(checked) => handleSelect(track.id, !!checked)}
-                                disabled={disabled}
-                            />
-                            <Label htmlFor={`track-select-${track.id}`} className="text-sm font-normal cursor-pointer">
-                                {track.title} ({track.languageCode})
-                            </Label>
-                        </div>
-                    ))}
+            {/* Search Results List */}
+            {searchResults.length > 0 && (
+                <div className="max-h-60 overflow-y-auto border rounded bg-white dark:bg-slate-900 p-2 space-y-1 shadow-sm">
+                    {searchResults.map(track => {
+                         const isAlreadyInCollection = existingIdsSet.has(track.id);
+                         const isSelected = newlySelectedIds.has(track.id);
+                         const isDisabled = isAlreadyInCollection || disabled;
+                         return (
+                             <div key={track.id} className={cn("flex items-center space-x-2 p-1 rounded", isDisabled ? "opacity-60" : "hover:bg-slate-100 dark:hover:bg-slate-700/50")}>
+                                 <Checkbox
+                                    id={`track-select-${track.id}`}
+                                    checked={isSelected}
+                                    disabled={isDisabled}
+                                    onCheckedChange={(checked) => handleSelect(track.id, !!checked)}
+                                    aria-label={`Select track ${track.title}`}
+                                />
+                                <Label
+                                    htmlFor={`track-select-${track.id}`}
+                                    className={cn("text-sm font-normal flex-grow truncate", isDisabled ? "cursor-not-allowed" : "cursor-pointer")}
+                                >
+                                    {track.title}
+                                    <span className="text-xs text-slate-500 ml-1">({track.languageCode})</span>
+                                    {isAlreadyInCollection && <span className="text-xs text-green-600 dark:text-green-400 ml-1 italic">(Already Added)</span>}
+                                </Label>
+                             </div>
+                         );
+                    })}
                 </div>
             )}
-            {!isLoading && debouncedSearchTerm && searchResults.length === 0 && (
-                <p className="text-xs text-gray-500 p-2">No tracks found matching "{debouncedSearchTerm}".</p>
+            {!isSearching && debouncedSearchTerm && searchResults.length === 0 && (
+                <p className="text-xs text-slate-500 dark:text-slate-400 p-2 text-center italic">
+                    No tracks found matching "{debouncedSearchTerm}".
+                </p>
             )}
-             <p className="text-xs text-gray-500">{selectedTrackIds.size} track(s) selected.</p>
+
+            {/* Add Button */}
+            {newlySelectedIds.size > 0 && (
+                 <div className="flex justify-end pt-2 border-t dark:border-slate-700/50">
+                     <Button type="button" onClick={handleAddSelected} size="sm" disabled={disabled}>
+                         <ListPlus size={16} className="mr-1"/> Add {newlySelectedIds.size} Selected Track(s)
+                     </Button>
+                 </div>
+            )}
         </div>
     );
 }

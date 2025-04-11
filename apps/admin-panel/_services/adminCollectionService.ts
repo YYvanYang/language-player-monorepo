@@ -1,101 +1,77 @@
 // apps/admin-panel/_services/adminCollectionService.ts
-import apiClient from '@repo/api-client';
+import apiClient, { APIError } from '@repo/api-client'; // Correct path assuming monorepo setup
 import type {
     AudioCollectionResponseDTO,
     PaginatedResponseDTO,
-    CreateCollectionRequestDTO, // Can admin create collections? Assume yes.
+    AudioTrackResponseDTO, // Assuming admin detail might include tracks
+    CreateCollectionRequestDTO,
     UpdateCollectionRequestDTO,
     UpdateCollectionTracksRequestDTO,
-    AudioTrackResponseDTO, // Needed if admin endpoints return tracks
-} from '@repo/types';
+} from '@repo/types'; // Use shared types
 import { buildQueryString } from '@repo/utils'; // Use shared util
 
 // Define specific params if admin filtering differs
+// Match this with backend query capabilities for admin endpoint
 export interface AdminListCollectionsParams {
-    q?: string; // Search by title? Owner email?
-    ownerId?: string; // Filter by specific owner
-    type?: string; // Filter by type (COURSE/PLAYLIST)
+    q?: string; // Search term (e.g., title, description)
+    ownerId?: string; // Filter by specific owner UUID
+    type?: 'COURSE' | 'PLAYLIST'; // Filter by type
     limit?: number;
     offset?: number;
-    sortBy?: 'title' | 'createdAt' | 'ownerId'; // Example sort fields
+    sortBy?: 'title' | 'createdAt' | 'updatedAt' | 'ownerId' | 'type'; // Example sort fields
     sortDir?: 'asc' | 'desc';
 }
+
+const ADMIN_COLLECTIONS_ENDPOINT = '/admin/audio/collections'; // Base endpoint for admin collection operations
 
 // --- Fetch Functions ---
 
 /**
- * Fetches a paginated list of all audio collections (requires admin privileges).
+ * Fetches a paginated list of ALL audio collections (requires admin privileges).
  */
 export async function listAllCollections(params?: AdminListCollectionsParams): Promise<PaginatedResponseDTO<AudioCollectionResponseDTO>> {
     const queryString = buildQueryString(params);
-    // Calls the ADMIN endpoint for listing collections
-    const response = await apiClient<PaginatedResponseDTO<AudioCollectionResponseDTO>>(`/admin/audio/collections${queryString}`);
-    return response;
+    const endpoint = `${ADMIN_COLLECTIONS_ENDPOINT}${queryString}`;
+    console.log(`ADMIN SERVICE: Fetching collections from: ${endpoint}`);
+    try {
+        const response = await apiClient<PaginatedResponseDTO<AudioCollectionResponseDTO>>(endpoint);
+        return response;
+    } catch (error) {
+        console.error(`ADMIN SERVICE: Error listing collections:`, error);
+        throw error; // Re-throw APIError or other errors
+    }
 }
 
 /**
- * Fetches details for a specific audio collection, potentially including tracks (requires admin privileges).
+ * Fetches details for a specific audio collection (requires admin privileges).
+ * Assumes the admin endpoint returns the collection DTO.
  */
 export async function getAdminCollectionDetails(collectionId: string): Promise<AudioCollectionResponseDTO> {
     if (!collectionId) {
-        throw new Error("Collection ID cannot be empty");
+        throw new Error("ADMIN SERVICE: Collection ID cannot be empty");
     }
-    // Calls the ADMIN endpoint for collection details
-    // Assume this endpoint returns tracks similar to the user one
-    const response = await apiClient<AudioCollectionResponseDTO>(`/admin/audio/collections/${collectionId}`);
-    return response;
+    const endpoint = `${ADMIN_COLLECTIONS_ENDPOINT}/${collectionId}`;
+    console.log(`ADMIN SERVICE: Fetching collection details from: ${endpoint}`);
+    try {
+        // Assuming this endpoint returns the collection, potentially with tracks populated
+        const response = await apiClient<AudioCollectionResponseDTO>(endpoint);
+        return response;
+    } catch (error) {
+        console.error(`ADMIN SERVICE: Error fetching collection details for ${collectionId}:`, error);
+        throw error; // Re-throw APIError or other errors
+    }
 }
 
-/**
- * Creates a new audio collection (requires admin privileges).
- * Admin might be able to assign ownership. Add ownerId to request DTO if needed.
- */
-export async function createAdminCollection(data: CreateCollectionRequestDTO): Promise<AudioCollectionResponseDTO> {
-    // Calls the ADMIN endpoint for creating a collection
-    const response = await apiClient<AudioCollectionResponseDTO>(`/admin/audio/collections`, {
-        method: 'POST',
-        body: JSON.stringify(data),
-    });
-    return response;
-}
-
-/**
- * Updates audio collection metadata (requires admin privileges).
- */
-export async function updateAdminCollectionMetadata(collectionId: string, data: UpdateCollectionRequestDTO): Promise<void> { // Often returns 204
-    if (!collectionId) {
-        throw new Error("Collection ID cannot be empty");
-    }
-    // Calls the ADMIN endpoint for updating collection metadata
-    await apiClient<void>(`/admin/audio/collections/${collectionId}`, {
-        method: 'PUT', // Or PATCH
-        body: JSON.stringify(data),
-    });
-}
-
-/**
- * Updates the tracks within an audio collection (requires admin privileges).
- */
-export async function updateAdminCollectionTracks(collectionId: string, data: UpdateCollectionTracksRequestDTO): Promise<void> { // Often returns 204
-    if (!collectionId) {
-        throw new Error("Collection ID cannot be empty");
-    }
-    // Calls the ADMIN endpoint for updating collection tracks
-    await apiClient<void>(`/admin/audio/collections/${collectionId}/tracks`, {
-        method: 'PUT',
-        body: JSON.stringify(data),
-    });
-}
-
-/**
- * Deletes an audio collection (requires admin privileges).
- */
-export async function deleteAdminCollection(collectionId: string): Promise<void> {
-    if (!collectionId) {
-        throw new Error("Collection ID cannot be empty");
-    }
-    // Calls the ADMIN endpoint for deleting a collection
-    await apiClient<void>(`/admin/audio/collections/${collectionId}`, {
-        method: 'DELETE',
-    });
-}
+// Note: Create/Update/Delete operations are typically handled directly in Server Actions
+// using the apiClient. Defining service functions for them is optional but can help centralize API calls.
+// Example (optional):
+// export async function createAdminCollection(data: CreateCollectionRequestDTO): Promise<AudioCollectionResponseDTO> {
+//     const endpoint = ADMIN_COLLECTIONS_ENDPOINT;
+//     try {
+//         const response = await apiClient<AudioCollectionResponseDTO>(endpoint, { method: 'POST', body: data });
+//         return response;
+//     } catch (error) {
+//         console.error(`ADMIN SERVICE: Error creating collection:`, error);
+//         throw error;
+//     }
+// }

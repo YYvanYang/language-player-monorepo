@@ -1,3 +1,5 @@
+// apps/admin-panel/eslint.config.mjs
+// Assuming FlatCompat setup is standard across apps
 import { dirname } from "path";
 import { fileURLToPath } from "url";
 import { FlatCompat } from "@eslint/eslintrc";
@@ -10,7 +12,9 @@ const compat = new FlatCompat({
 });
 
 const eslintConfig = [
-  ...compat.extends("next/core-web-vitals", "next/typescript"),
+  // Use the shared eslint-config-custom which extends next/core-web-vitals etc.
+  // Adjust if you need admin-panel specific overrides
+  ...compat.extends("custom"),
 ];
 
 export default eslintConfig;

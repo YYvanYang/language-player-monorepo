@@ -1,37 +1,38 @@
 // packages/types/src/index.ts
 
 // --- Common/Pagination ---
-/** Standardized error response structure */
+/** Standardized error response structure from the backend */
 export interface ErrorResponseDTO {
-  code: string; // e.g., "NOT_FOUND", "INVALID_INPUT"
+  code: string; // e.g., "NOT_FOUND", "INVALID_INPUT", "UNAUTHENTICATED"
   message: string;
-  requestId?: string;
+  requestId?: string; // Optional trace ID
+  // details?: unknown; // Optional structured details (e.g., validation errors)
 }
 
-/** Standardized paginated response structure */
+/** Standardized paginated response structure from the backend */
 export interface PaginatedResponseDTO<T> {
-  data: T[];
-  total: number;
-  limit: number;
-  offset: number;
-  page: number; // 1-based page number derived from limit/offset
-  totalPages: number;
+  data: T[];         // Items for the current page
+  total: number;     // Total number of items available
+  limit: number;     // The limit used for this page
+  offset: number;    // The offset used for this page
+  page: number;      // Current page number (1-based, calculated)
+  totalPages: number;// Total number of pages (calculated)
 }
 
-// --- Authentication DTOs ---
+// --- Authentication DTOs (Matching backend API) ---
 export interface RegisterRequestDTO {
   email: string;
-  password?: string; // Password is required for local registration
+  password?: string; // Required for 'local' provider
   name: string;
 }
 
 export interface LoginRequestDTO {
   email: string;
-  password?: string; // Password is required for local login
+  password?: string; // Required for 'local' provider
 }
 
 export interface GoogleCallbackRequestDTO {
-  idToken: string; // The ID token received from Google Sign-In client-side
+  idToken: string; // Google ID Token from client
 }
 
 export interface RefreshRequestDTO {
@@ -45,11 +46,12 @@ export interface LogoutRequestDTO {
 export interface AuthResponseDTO {
   accessToken: string;
   refreshToken: string;
-  isNewUser?: boolean; // Indicates if Google sign-in created a new user
+  isNewUser?: boolean; // Provided by Google callback response
+  user?: UserResponseDTO; // Often included on login/register success
 }
 
 // --- User DTOs ---
-export type AuthProvider = 'local' | 'google'; // Matches backend domain
+export type AuthProvider = 'local' | 'google'; // Matches backend domain AuthProvider
 
 export interface UserResponseDTO {
   id: string; // UUID
@@ -57,42 +59,50 @@ export interface UserResponseDTO {
   name: string;
   authProvider: AuthProvider;
   profileImageUrl?: string | null;
-  createdAt: string; // ISO 8601 string (e.g., "2023-10-27T10:00:00Z")
-  updatedAt: string; // ISO 8601 string
-  // Add isAdmin field if backend includes it for admin checks
-  isAdmin?: boolean;
+  createdAt: string; // ISO 8601 datetime string (e.g., "2023-10-27T10:00:00Z")
+  updatedAt: string; // ISO 8601 datetime string
+  isAdmin?: boolean; // Important for Admin Panel checks
+}
+
+// --- Admin User DTOs (Example) ---
+// DTO for updating user info via admin panel
+export interface AdminUpdateUserRequestDTO {
+    name?: string;
+    email?: string; // Be cautious allowing email updates
+    isAdmin?: boolean;
+    // Add other fields like status (active/inactive), roles etc.
+    // status?: 'active' | 'inactive';
 }
 
 // --- Audio Track DTOs ---
-export type AudioLevel = "A1" | "A2" | "B1" | "B2" | "C1" | "C2" | "NATIVE" | ""; // Allow empty string
+export type AudioLevel = "A1" | "A2" | "B1" | "B2" | "C1" | "C2" | "NATIVE" | ""; // Allow empty string for 'unknown/any'
 
-// Matches dto.AudioTrackResponseDTO
+// Basic track info returned in lists
 export interface AudioTrackResponseDTO {
   id: string; // UUID
   title: string;
   description?: string | null;
-  languageCode: string;
-  level?: AudioLevel | null;
-  durationMs: number; // Duration in milliseconds (integer)
+  languageCode: string; // e.g., 'en-US'
+  level?: AudioLevel | null; // Optional level
+  durationMs: number; // Always in milliseconds
   coverImageUrl?: string | null;
   uploaderId?: string | null; // UUID string
   isPublic: boolean;
   tags?: string[] | null;
-  createdAt: string; // ISO 8601 string
-  updatedAt: string; // ISO 8601 string
+  createdAt: string; // ISO 8601 datetime string
+  updatedAt: string; // ISO 8601 datetime string
 }
 
-// Matches dto.AudioTrackDetailsResponseDTO
+// Detailed track info including playback URL and user-specific data
 export interface AudioTrackDetailsResponseDTO extends AudioTrackResponseDTO {
   playUrl: string; // Presigned URL for playback
-  userProgressMs?: number | null; // User's progress in milliseconds (integer)
-  userBookmarks?: BookmarkResponseDTO[] | null;
+  userProgressMs?: number | null; // User's progress in milliseconds
+  userBookmarks?: BookmarkResponseDTO[] | null; // Array of user's bookmarks for this track
 }
 
 // --- Audio Collection DTOs ---
 export type CollectionType = "COURSE" | "PLAYLIST";
 
-// Matches dto.CreateCollectionRequestDTO
 export interface CreateCollectionRequestDTO {
   title: string;
   description?: string | null;
@@ -100,18 +110,15 @@ export interface CreateCollectionRequestDTO {
   initialTrackIds?: string[] | null; // Array of Track UUID strings
 }
 
-// Matches dto.UpdateCollectionRequestDTO
 export interface UpdateCollectionRequestDTO {
-  title?: string | null;       // Made optional for PATCH-like behavior if needed
-  description?: string | null; // Made optional
+  title?: string | null; // Optional for partial updates
+  description?: string | null; // Optional for partial updates
 }
 
-// Matches dto.UpdateCollectionTracksRequestDTO
 export interface UpdateCollectionTracksRequestDTO {
   orderedTrackIds: string[]; // Array of Track UUID strings in desired order
 }
 
-// Matches dto.AudioCollectionResponseDTO
 export interface AudioCollectionResponseDTO {
   id: string; // UUID
   title: string;
@@ -120,164 +127,141 @@ export interface AudioCollectionResponseDTO {
   type: CollectionType;
   createdAt: string; // ISO 8601 string
   updatedAt: string; // ISO 8601 string
-  tracks?: AudioTrackResponseDTO[] | null; // Optional list of full track details
-  // trackCount?: number; // Add if backend provides a count separately
+  // Tracks might be included in detail view, optional in lists
+  tracks?: AudioTrackResponseDTO[] | null;
+  // trackCount?: number; // Optional: If backend provides count separately
 }
 
 // --- User Activity DTOs ---
-
-// Matches dto.RecordProgressRequestDTO
 export interface RecordProgressRequestDTO {
   trackId: string; // UUID
-  progressMs: number; // Progress in milliseconds (integer)
+  progressMs: number; // Progress in milliseconds
 }
 
-// Matches dto.PlaybackProgressResponseDTO
 export interface PlaybackProgressResponseDTO {
   userId: string; // UUID
   trackId: string; // UUID
-  progressMs: number; // Progress in milliseconds (integer)
+  progressMs: number; // Progress in milliseconds
   lastListenedAt: string; // ISO 8601 string
 }
 
-// Matches dto.CreateBookmarkRequestDTO
 export interface CreateBookmarkRequestDTO {
   trackId: string; // UUID
-  timestampMs: number; // Timestamp in milliseconds (integer)
+  timestampMs: number; // Timestamp in milliseconds
   note?: string | null;
 }
 
-// Matches dto.BookmarkResponseDTO
 export interface BookmarkResponseDTO {
   id: string; // UUID
   userId: string; // UUID
   trackId: string; // UUID
-  timestampMs: number; // Timestamp in milliseconds (integer)
+  timestampMs: number; // Timestamp in milliseconds
   note?: string | null;
   createdAt: string; // ISO 8601 string
 }
 
-// --- Upload DTOs ---
-
-// Matches dto.RequestUploadRequestDTO
+// --- Upload DTOs (Matching Go backend DTOs/ports) ---
 export interface RequestUploadRequestDTO {
     filename: string;
-    contentType: string; // e.g., "audio/mpeg"
+    contentType: string;
 }
 
-// Matches dto.RequestUploadResponseDTO
 export interface RequestUploadResponseDTO {
-    uploadUrl: string; // The presigned PUT URL
-    objectKey: string; // The key assigned by the backend
+    uploadUrl: string;
+    objectKey: string;
 }
 
-// Matches dto.CompleteUploadInputDTO
+// DTO for POST /audio/tracks (matches port.CompleteUploadInput structure)
 export interface CompleteUploadRequestDTO {
     objectKey: string;
     title: string;
     description?: string | null;
     languageCode: string;
     level?: AudioLevel | null;
-    durationMs: number; // Duration MUST be provided in milliseconds
-    isPublic?: boolean | null;
+    durationMs: number; // Milliseconds
+    isPublic?: boolean | null; // Backend likely defaults this
     tags?: string[] | null;
     coverImageUrl?: string | null;
 }
 
-// --- Batch Upload DTOs ---
-
-// Matches dto.BatchRequestUploadInputItemDTO
+// DTO for POST /uploads/audio/batch/request (matches port.BatchRequestUploadInput)
 export interface BatchRequestUploadInputItemDTO {
     filename: string;
     contentType: string;
 }
-
-// Matches dto.BatchRequestUploadInputRequestDTO
 export interface BatchRequestUploadInputRequestDTO {
     files: BatchRequestUploadInputItemDTO[];
 }
 
-// Matches dto.BatchRequestUploadInputResponseItemDTO
+// DTO for response of /uploads/audio/batch/request (matches port.BatchURLResultItem structure)
 export interface BatchRequestUploadInputResponseItemDTO {
     originalFilename: string;
     objectKey: string;
     uploadUrl: string;
-    error?: string; // Error message if URL generation failed for this item
+    error?: string; // Error message if specific URL generation failed
 }
-
-// Matches dto.BatchRequestUploadInputResponseDTO
 export interface BatchRequestUploadInputResponseDTO {
     results: BatchRequestUploadInputResponseItemDTO[];
 }
 
-// Matches dto.BatchCompleteUploadItemDTO
+// DTO for POST /audio/tracks/batch/complete (matches port.BatchCompleteInput structure)
 export interface BatchCompleteUploadItemDTO {
     objectKey: string;
     title: string;
     description?: string | null;
     languageCode: string;
     level?: AudioLevel | null;
-    durationMs: number;
+    durationMs: number; // Milliseconds
     isPublic?: boolean | null;
     tags?: string[] | null;
     coverImageUrl?: string | null;
 }
-
-// Matches dto.BatchCompleteUploadInputDTO
 export interface BatchCompleteUploadInputDTO {
     tracks: BatchCompleteUploadItemDTO[];
 }
 
-// Matches dto.BatchCompleteUploadResponseItemDTO
+// DTO for response of /audio/tracks/batch/complete (matches port.BatchCompleteResultItem structure)
 export interface BatchCompleteUploadResponseItemDTO {
     objectKey: string;
     success: boolean;
     trackId?: string; // UUID string of created track if successful
-    error?: string;   // Error message if processing failed
+    error?: string;   // Error message if processing failed for this item
 }
-
-// Matches dto.BatchCompleteUploadResponseDTO
 export interface BatchCompleteUploadResponseDTO {
     results: BatchCompleteUploadResponseItemDTO[];
 }
 
-// --- Query Parameter Interfaces ---
 
-// Based on GET /audio/tracks parameters
-export interface ListTrackQueryParams {
-  q?: string;
-  lang?: string;
-  level?: AudioLevel;
-  isPublic?: boolean;
-  tags?: string[];
-  sortBy?: 'createdAt' | 'title' | 'durationMs' | 'level'; // Match allowed fields
+// --- Query Parameter Interfaces (for API services/hooks) ---
+
+// Generic pagination params used by multiple list requests
+export interface PaginationParams {
+    limit?: number;
+    offset?: number;
+}
+
+// Params for GET /audio/tracks
+export interface ListTrackQueryParams extends PaginationParams {
+  q?: string; // General search
+  lang?: string; // Language code filter
+  level?: AudioLevel; // Level filter
+  isPublic?: boolean; // Public status filter
+  tags?: string[]; // Tag filter (array)
+  sortBy?: 'createdAt' | 'title' | 'durationMs' | 'level'; // Allowed sort fields
   sortDir?: 'asc' | 'desc';
-  limit?: number;
-  offset?: number;
 }
 
-// Based on GET /users/me/bookmarks parameters
-export interface ListBookmarkQueryParams {
-    trackId?: string; // UUID
-    limit?: number;
-    offset?: number;
+// Params for GET /users/me/bookmarks
+export interface ListBookmarkQueryParams extends PaginationParams {
+    trackId?: string; // Optional track UUID filter
+    // Add sorting if API supports it
+    // sortBy?: 'createdAt' | 'timestampMs';
+    // sortDir?: 'asc' | 'desc';
 }
 
-// Based on GET /users/me/progress parameters
-export interface ListProgressQueryParams {
-    limit?: number;
-    offset?: number;
-}
-
-// --- Admin Specific (Placeholder - Define based on actual Admin API) ---
-export interface AdminListUsersParams {
-    // Define params for listing users in admin panel
-    q?: string;
-    limit?: number;
-    offset?: number;
-}
-
-export interface AdminUpdateUserRequestDTO {
-    name?: string;
-    // Add roles, status, etc.
+// Params for GET /users/me/progress
+export interface ListProgressQueryParams extends PaginationParams {
+    // Add sorting if API supports it
+    // sortBy?: 'lastListenedAt';
+    // sortDir?: 'asc' | 'desc';
 }

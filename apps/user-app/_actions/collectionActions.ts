@@ -9,16 +9,23 @@ import type {
     UpdateCollectionRequestDTO,
     UpdateCollectionTracksRequestDTO,
     AudioCollectionResponseDTO,
+    CollectionType,
 } from '@repo/types';
 import { getIronSession } from 'iron-session';
-import type { SessionData } from '@repo/auth'; // Or define locally
+import { SessionData, getUserSessionOptions } from '@repo/auth'; // Use user options
 
-// --- Session Options (Duplicate or import) ---
-const sessionOptions = { /* ... PASTE USER SESSION OPTIONS ... */ };
-if (!sessionOptions.password) { throw new Error("USER_SESSION_SECRET missing for server action"); }
-// --- End Session Options ---
-
-async function getAuthenticatedUserID(): Promise<string | null> { /* ... Same helper as before ... */ }
+// --- Helper to get authenticated User ID ---
+// Returns null if not authenticated
+async function getAuthenticatedUserID(): Promise<string | null> {
+     try {
+        const session = await getIronSession<SessionData>(cookies(), getUserSessionOptions());
+        return session.userId ?? null;
+     } catch(error) {
+        console.error("Error getting session in collection action:", error);
+        return null;
+     }
+}
+// --- End Helper ---
 
 // --- Action: Create Collection ---
 interface CreateCollectionResult {
@@ -32,33 +39,35 @@ export async function createCollectionAction(requestData: CreateCollectionReques
         return { success: false, message: "User not authenticated." };
     }
 
-    // Basic server-side validation (more can be added)
-    if (!requestData.title || !requestData.type) {
-         return { success: false, message: "Title and type are required." };
+    // Basic server-side validation
+    if (!requestData.title?.trim()) {
+         return { success: false, message: "Collection title is required." };
     }
-    if (requestData.type !== "COURSE" && requestData.type !== "PLAYLIST") {
-        return { success: false, message: "Invalid collection type." };
+    if (!requestData.type || (requestData.type !== "COURSE" && requestData.type !== "PLAYLIST")) {
+        return { success: false, message: "Valid collection type (COURSE or PLAYLIST) is required." };
     }
+    // TODO: Validate format of initialTrackIds if provided
 
     try {
+        // Backend endpoint for user collections is /audio/collections (auth determines ownership)
         const createdCollection = await apiClient<AudioCollectionResponseDTO>(`/audio/collections`, {
             method: 'POST',
             body: JSON.stringify(requestData),
+            // Auth token is implicitly handled by apiClient cookies/fetch config
         });
 
-        revalidateTag(`collections-${userId}`); // Invalidate user's collection list
-        // Revalidating individual track caches isn't usually needed when just associating them
+        revalidateTag(`collections-${userId}`); // Invalidate user's collection list cache
 
         console.log(`Collection created for user ${userId}, collection ${createdCollection.id}`);
-        return { success: true, collection: createdCollection };
+        return { success: true, collection: createdCollection, message: "Collection created successfully." };
 
     } catch (error) {
         console.error(`Error creating collection for user ${userId}:`, error);
          if (error instanceof APIError) {
-             if (error.status === 400 && error.message.includes('track IDs do not exist')) {
-                 // Handle specific backend error if initial tracks are invalid
+             if (error.status === 400 && error.message?.includes('track IDs do not exist')) {
                   return { success: false, message: 'One or more initial tracks could not be found.' };
              }
+              if (error.status === 401) { return { success: false, message: "Authentication required." }; }
              return { success: false, message: `Failed to create collection: ${error.message}` };
          }
          return { success: false, message: 'An unexpected error occurred while creating the collection.' };
@@ -68,29 +77,43 @@ export async function createCollectionAction(requestData: CreateCollectionReques
 // --- Action: Update Collection Metadata ---
 interface UpdateCollectionResult { success: boolean; message?: string; }
 export async function updateCollectionMetadataAction(collectionId: string, requestData: UpdateCollectionRequestDTO): Promise<UpdateCollectionResult> {
-    const userId = await getAuthenticatedUserID(); // Although ownership checked by backend, useful for logging/tags
+    const userId = await getAuthenticatedUserID(); // Needed for tag invalidation
     if (!userId) { return { success: false, message: "User not authenticated." }; }
     if (!collectionId) { return { success: false, message: "Collection ID is required." }; }
-    if (!requestData.title && !requestData.description) { return { success: false, message: "No update data provided."}; } // Or allow empty updates?
+    // Allow empty title/description if that's the intent of the update
+    if (requestData.title === undefined && requestData.description === undefined) {
+         return { success: false, message: "No update data provided (title or description required)."};
+    }
+    // Validate title length if provided
+     if (requestData.title !== undefined && requestData.title !== null && requestData.title.length > 255) {
+          return { success: false, message: "Title cannot exceed 255 characters."};
+     }
+
 
      try {
-        // Backend returns 204 No Content on success
+        // Backend endpoint: PUT /audio/collections/{collectionId}
+        // Backend handles ownership check based on authenticated user
         await apiClient<void>(`/audio/collections/${collectionId}`, {
-            method: 'PUT', // Assuming PUT for metadata update
+            method: 'PUT',
             body: JSON.stringify(requestData),
         });
 
-        revalidateTag(`collection-${collectionId}`); // Invalidate specific collection detail
-        revalidateTag(`collections-${userId}`); // Invalidate user's list as title might change
+        // Invalidate caches
+        revalidateTag(`collection-${collectionId}`); // Invalidate specific collection detail page/data
+        revalidateTag(`collections-${userId}`); // Invalidate user's collection list (title might have changed)
+        revalidatePath(`/collections/${collectionId}`); // Invalidate detail page path
+        revalidatePath(`/collections/${collectionId}/edit`); // Invalidate edit page path
 
         console.log(`Collection metadata updated for ${collectionId}`);
-        return { success: true };
+        return { success: true, message: "Collection updated successfully." };
 
     } catch (error) {
         console.error(`Error updating collection metadata ${collectionId}:`, error);
          if (error instanceof APIError) {
             if (error.status === 404) { return { success: false, message: "Collection not found." }; }
-            if (error.status === 403) { return { success: false, message: "Permission denied." }; }
+            if (error.status === 403) { return { success: false, message: "Permission denied. You may not own this collection." }; }
+             if (error.status === 401) { return { success: false, message: "Authentication required." }; }
+             if (error.status === 400) { return { success: false, message: `Invalid input: ${error.message}` }; }
             return { success: false, message: `Failed to update collection: ${error.message}` };
         }
         return { success: false, message: 'An unexpected error occurred.' };
@@ -99,28 +122,32 @@ export async function updateCollectionMetadataAction(collectionId: string, reque
 
 // --- Action: Update Collection Tracks ---
 export async function updateCollectionTracksAction(collectionId: string, requestData: UpdateCollectionTracksRequestDTO): Promise<UpdateCollectionResult> {
-     const userId = await getAuthenticatedUserID();
+     const userId = await getAuthenticatedUserID(); // Needed for tag invalidation
      if (!userId) { return { success: false, message: "User not authenticated." }; }
      if (!collectionId) { return { success: false, message: "Collection ID is required." }; }
-     // Validation for track IDs format happens in DTO/handler usually
+     // TODO: Optionally add UUID validation for track IDs client-side before sending
 
      try {
-        // Backend returns 204 No Content
-        await apiClient<void>(`/audio/collections/${collectionId}/tracks`, {
+         // Backend endpoint: PUT /audio/collections/{collectionId}/tracks
+         // Backend handles ownership and track existence checks
+         await apiClient<void>(`/audio/collections/${collectionId}/tracks`, {
             method: 'PUT',
             body: JSON.stringify(requestData),
         });
 
-        revalidateTag(`collection-${collectionId}`); // Invalidate specific collection detail
+        // Invalidate cache for this specific collection
+        revalidateTag(`collection-${collectionId}`);
+         revalidatePath(`/collections/${collectionId}`); // Invalidate detail page path
 
         console.log(`Collection tracks updated for ${collectionId}`);
-        return { success: true };
+        return { success: true, message: "Tracks updated successfully." };
 
     } catch (error) {
         console.error(`Error updating collection tracks ${collectionId}:`, error);
         if (error instanceof APIError) {
-             if (error.status === 404) { return { success: false, message: "Collection or one/more tracks not found." }; }
-             if (error.status === 403) { return { success: false, message: "Permission denied." }; }
+             if (error.status === 404) { return { success: false, message: "Collection or one/more specified tracks not found." }; }
+             if (error.status === 403) { return { success: false, message: "Permission denied. You may not own this collection." }; }
+             if (error.status === 401) { return { success: false, message: "Authentication required." }; }
              if (error.status === 400) { return { success: false, message: `Invalid input: ${error.message}` }; }
             return { success: false, message: `Failed to update tracks: ${error.message}` };
         }
@@ -131,28 +158,31 @@ export async function updateCollectionTracksAction(collectionId: string, request
 
 // --- Action: Delete Collection ---
 export async function deleteCollectionAction(collectionId: string): Promise<UpdateCollectionResult> {
-     const userId = await getAuthenticatedUserID();
+     const userId = await getAuthenticatedUserID(); // Needed for tag invalidation
      if (!userId) { return { success: false, message: "User not authenticated." }; }
      if (!collectionId) { return { success: false, message: "Collection ID is required." }; }
 
       try {
-        // Backend returns 204 No Content
+        // Backend endpoint: DELETE /audio/collections/{collectionId}
+        // Backend handles ownership check
         await apiClient<void>(`/audio/collections/${collectionId}`, {
             method: 'DELETE',
         });
 
+        // Invalidate caches
         revalidateTag(`collections-${userId}`); // Invalidate user's collection list
-         // Note: Also need to invalidate the specific collection page if user could navigate back
-         revalidatePath(`/collections/${collectionId}`); // Invalidate specific path
+        revalidatePath(`/collections`); // Invalidate the collection list page path
+        revalidatePath(`/collections/${collectionId}`); // Invalidate specific detail page path (will now 404)
 
         console.log(`Collection deleted for user ${userId}, collection ${collectionId}`);
-        return { success: true };
+        return { success: true, message: "Collection deleted." };
 
     } catch (error) {
         console.error(`Error deleting collection ${collectionId}:`, error);
          if (error instanceof APIError) {
              if (error.status === 404) { return { success: false, message: "Collection not found." }; }
-             if (error.status === 403) { return { success: false, message: "Permission denied." }; }
+             if (error.status === 403) { return { success: false, message: "Permission denied. You may not own this collection." }; }
+             if (error.status === 401) { return { success: false, message: "Authentication required." }; }
             return { success: false, message: `Failed to delete collection: ${error.message}` };
         }
         return { success: false, message: 'An unexpected error occurred.' };

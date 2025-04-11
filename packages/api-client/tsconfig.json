@@ -1,1 +1,9 @@
-{ "extends": "../tsconfig/base.json", "compilerOptions": { "outDir": "dist", "rootDir": "src" }, "include": ["src"], "exclude": ["node_modules", "dist"] }
+{
+    "extends": "../../packages/tsconfig/base.json", // Use base config from monorepo root
+    "compilerOptions": {
+      "outDir": "dist", // Specify output directory for builds (if needed)
+      "rootDir": "src" // Specify root source directory
+    },
+    "include": ["src"], // Only include files in the src directory
+    "exclude": ["node_modules", "dist"] // Exclude standard build/dependency folders
+  }

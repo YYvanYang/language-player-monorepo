@@ -6,14 +6,15 @@ import { useActionState } from 'react'; // Updated import for React 19+
 import { useFormStatus } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import { adminLoginAction } from '@/_actions/adminAuthActions'; // Adjust import alias
-import { Button } from '@repo/ui'; // Use shared UI
-import { Input } from '@repo/ui'; // Assume Input exists
-import { Label } from '@repo/ui'; // Assume Label exists
+import { Button, Input, Label } from '@repo/ui'; // Use shared UI
+import { Loader } from 'lucide-react'; // Loading icon
+import { cn } from '@repo/utils'; // Utility for class names
 
 function SubmitButton() {
   const { pending } = useFormStatus();
   return (
     <Button type="submit" aria-disabled={pending} disabled={pending} className="w-full">
+      {pending ? <Loader className="h-4 w-4 mr-2 animate-spin"/> : null}
       {pending ? 'Logging in...' : 'Admin Login'}
     </Button>
   );
@@ -22,16 +23,14 @@ function SubmitButton() {
 export function AdminLoginForm() {
   const router = useRouter();
   // Use useActionState for form state management
-  // Action signature: (prevState, formData) => Promise<{success: boolean, message?: string}>
   const [state, formAction, isPending] = useActionState(adminLoginAction, null);
 
   // Redirect on successful login
   useEffect(() => {
     if (state?.success) {
-      // Login successful, redirect to admin dashboard
-      console.log("Admin login successful, redirecting...");
+      console.log("Admin login successful, redirecting to dashboard...");
       router.push('/'); // Redirect to admin root/dashboard
-      // router.refresh(); // Optional: force refresh
+      // No need to manually refresh, layout should update automatically
     }
   }, [state, router]);
 
@@ -45,7 +44,9 @@ export function AdminLoginForm() {
           type="email"
           required
           placeholder="admin@example.com"
-          className={state && !state.success && state.message?.includes('email') ? 'border-red-500' : ''}
+          // Highlight field if error message relates to email (simple check)
+          className={cn(state && !state.success && state.message?.toLowerCase().includes('email') ? 'border-red-500' : '')}
+          aria-invalid={state && !state.success && state.message?.toLowerCase().includes('email') ? "true" : "false"}
         />
       </div>
       <div>
@@ -56,13 +57,17 @@ export function AdminLoginForm() {
           type="password"
           required
           placeholder="********"
-          className={state && !state.success && state.message?.includes('password') ? 'border-red-500' : ''}
+          // Highlight field if error message relates to password (simple check)
+          className={cn(state && !state.success && state.message?.toLowerCase().includes('password') ? 'border-red-500' : '')}
+          aria-invalid={state && !state.success && state.message?.toLowerCase().includes('password') ? "true" : "false"}
         />
       </div>
 
       {/* Display general form error message */}
       {state && !state.success && state.message && (
-        <p className="text-red-600 text-sm bg-red-50 p-2 rounded border border-red-200">{state.message}</p>
+        <p className="text-red-600 text-sm bg-red-50 p-2 rounded border border-red-200" role="alert">
+            {state.message}
+        </p>
       )}
 
       <SubmitButton />

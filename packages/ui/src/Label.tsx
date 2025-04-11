@@ -1,10 +1,13 @@
+// packages/ui/src/Label.tsx
+'use client'; // Radix uses client features
+
 import * as React from "react";
-import * as LabelPrimitive from "@radix-ui/react-label"; // Using Radix UI for base
+import * as LabelPrimitive from "@radix-ui/react-label";
 import { cva, type VariantProps } from "class-variance-authority";
-import { cn } from "@repo/utils"; // Assuming cn utility
+import { cn } from "@repo/utils";
 
 const labelVariants = cva(
-  "text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+  "text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-slate-200" // Base styles
 );
 
 const Label = React.forwardRef<
@@ -20,4 +23,4 @@ const Label = React.forwardRef<
 ));
 Label.displayName = LabelPrimitive.Root.displayName;
 
-export { Label }; 
+export { Label };

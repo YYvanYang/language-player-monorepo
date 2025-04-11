@@ -8,53 +8,52 @@ const sessionOptions = getUserSessionOptions();
 export const config = {
   matcher: [
     /*
-     * Match all request paths except for the ones starting with:
-     * - api (API routes, including /api/auth/session)
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     * - login, register (public auth pages)
-     * - tracks$ (allow public listing of tracks, but not specific actions)
-     * - collections$ (allow public listing of collections, but not specific actions)
-     * Publicly accessible pages like / or /tracks/{id} should be EXCLUDED from this matcher
-     * if they are meant to be viewable by non-logged-in users.
+     * Define paths that REQUIRE authentication.
+     * Public pages like landing page ('/'), public track/collection lists ('/tracks', '/collections'),
+     * and individual track/collection details should NOT be listed here
+     * if they can be viewed by non-logged-in users.
      */
-    // Example: Protect user-specific pages and creation pages
-     '/profile/:path*',
-     '/collections/new', // Protect creation page
-     '/collections/edit/:path*', // Protect editing
-     '/bookmarks/:path*',
-     '/upload', // Example upload page
-     // Add other paths that strictly require login
-     // '/collections$', // Protect the user's collection list if not public
-     // '/tracks$', // If track listing has user-specific filters/views
+    '/profile/:path*', // User profile pages
+    '/collections/new', // Creating new collections
+    '/collections/:collectionId/edit', // Editing collections (dynamic path)
+    '/bookmarks', // Viewing bookmarks list
+    '/upload', // Upload page
+    // Add other paths that strictly require login
+    // Example: '/settings/:path*'
   ],
 };
 
 export async function middleware(request: NextRequest) {
   const requestedPath = request.nextUrl.pathname;
-  // console.log(`User Middleware: Checking path: ${requestedPath}`);
+  const response = NextResponse.next(); // Prepare default response
 
-  const response = NextResponse.next();
   try {
-      const session = await getIronSession<SessionData>(request, response, sessionOptions);
-      const { userId } = session;
+    const session = await getIronSession<SessionData>(request, response, sessionOptions);
+    const { userId } = session;
 
-      if (!userId) {
-        const loginUrl = new URL('/login', request.url);
-        loginUrl.searchParams.set('next', requestedPath);
-        // console.log(`User Middleware: No userId found for protected path ${requestedPath}, redirecting to login.`);
-        return NextResponse.redirect(loginUrl);
-      }
+    // If accessing a protected route without a userId in the session, redirect to login
+    if (!userId) {
+      const loginUrl = new URL('/login', request.url);
+      // Preserve the originally requested URL to redirect back after login
+      loginUrl.searchParams.set('next', requestedPath + request.nextUrl.search);
+      console.log(`User Middleware: No userId for protected path ${requestedPath}, redirecting to login.`);
+      // Clear potentially invalid session cookie? Optional.
+      // session.destroy(); await session.save(); // Could add this, but redirect is primary action
+      return NextResponse.redirect(loginUrl);
+    }
 
-      // console.log(`User Middleware: userId ${userId} found for path ${requestedPath}, allowing.`);
-      return response; // Allow request, session might be attached to response
+    // User has a valid session, allow the request
+    // console.log(`User Middleware: Valid session (userId ${userId}) for protected path ${requestedPath}, allowing.`);
+    // Important: Attach session data to the response if needed by subsequent handlers/pages using headers
+    // response.headers.set('x-user-id', userId); // Example (Not typically needed with App Router server context)
+    return response;
 
   } catch (error) {
        console.error(`User Middleware Error processing path ${requestedPath}:`, error);
-       // Fallback: Redirect to login on session error
+       // Fallback: Redirect to login on session handling error
        const loginUrl = new URL('/login', request.url);
        loginUrl.searchParams.set('error', 'session_error');
+       // Cannot reliably clear cookie here on error
        return NextResponse.redirect(loginUrl);
   }
 }
