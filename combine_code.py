@@ -44,7 +44,7 @@ def should_exclude(filename, exclude_patterns):
             return True
     return False
 
-def combine_code_to_markdown(output_filename="frontend_project_code.md", exclude_list=None):
+def combine_code_to_markdown(output_filename="project_code.md", exclude_list=None):
     """将符合条件的文件合并到 Markdown 文件中"""
     if exclude_list is None:
         exclude_list = DEFAULT_EXCLUDES
