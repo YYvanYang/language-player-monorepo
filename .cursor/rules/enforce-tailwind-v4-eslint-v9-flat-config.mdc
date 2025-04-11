@@ -1,0 +1,64 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# cursor_rule: enforce_tailwind_v4_eslint_v9_flat_config
+rule: Enforce Tailwind v4 & ESLint v9 Flat Config Conventions
+description: |
+  Ensures frontend configuration files adhere to Tailwind CSS v4 and ESLint v9 Flat Config standards.
+  - Tailwind v4 uses `@import "tailwindcss";` and `@theme` in CSS, minimizing tailwind.config.js/ts.
+  - ESLint v9 uses flat config (`eslint.config.mjs`), shared configs export arrays, and app configs spread them without FlatCompat.
+  - Dedicated postcss.config.mjs for Tailwind is generally unnecessary with Next.js.
+trigger: edit
+when:
+  language: [javascript, typescript, css, mjs]
+  file_patterns:
+    - "**/tailwind.config.{js,ts}" # Match both JS and TS config files
+    - "**/postcss.config.mjs"
+    - "**/*globals.css" # Target main global CSS files
+    - "**/eslint.config.mjs" # Target ESLint flat config files
+    - "**/packages/eslint-config-custom/index.js" # Target the shared ESLint config
+then:
+  # --- Tailwind v4 Checks ---
+  - pattern: "@tailwind\\s+base;" # Match @tailwind base directive
+    message: |
+      [Tailwind v4] Found '@tailwind base;'. Replace '@tailwind base;', '@tailwind components;', and '@tailwind utilities;' with a single '@import "tailwindcss";' at the top of your main CSS file (e.g., globals.css).
+  - pattern: "@tailwind\\s+components;" # Match @tailwind components directive
+    message: |
+      [Tailwind v4] Found '@tailwind components;'. Replace '@tailwind base;', '@tailwind components;', and '@tailwind utilities;' with a single '@import "tailwindcss";' at the top of your main CSS file (e.g., globals.css).
+  - pattern: "@tailwind\\s+utilities;" # Match @tailwind utilities directive
+    message: |
+      [Tailwind v4] Found '@tailwind utilities;'. Replace '@tailwind base;', '@tailwind components;', and '@tailwind utilities;' with a single '@import "tailwindcss";' at the top of your main CSS file (e.g., globals.css).
+  - pattern: ":root\\s*\\{\\s*--background:" # Match CSS variable definitions outside @theme
+    condition: # Only trigger if NOT inside an @theme block (basic check)
+      not_pattern: "@theme\\s*\\{[^}]*:root\\s*\\{\\s*--background:[^}]*\\}"
+    message: |
+      [Tailwind v4] Found CSS variable definitions (like --background) potentially outside an '@theme' block in globals.css. In Tailwind v4, custom theme values and CSS variables should be defined within '@theme { ... }'. Review this section.
+    file_patterns: ["**/*globals.css"] # Specific to CSS files
+  - pattern: "\\s+theme:\\s*\\{\\s*(?!\\s*(container|extend|plugins)|\\s*\\})\\s*[a-zA-Z]+:" # Match non-empty 'theme: {' without only container/extend/plugins
+    message: |
+      [Tailwind v4] Found extensive theme customizations (colors, fonts, spacing, etc.) in `tailwind.config.ts`. In v4, these should be defined using CSS variables within the '@theme' directive in your main CSS file. Keep only 'content', 'darkMode', 'plugins', and minimal 'theme.extend' if needed by plugins in this file.
+    file_patterns: ["**/tailwind.config.{js,ts}"] # Specific to Tailwind config
+  - pattern: "theme:\\s*\\{\\s*extend:\\s*\\{\\s*(?!\\s*(keyframes|animation)|\\s*\\})\\s*[a-zA-Z]+:" # Match non-empty 'theme.extend: {' without only keyframes/animation
+    message: |
+      [Tailwind v4] Found extensive theme extensions (colors, fonts, spacing, etc.) in `tailwind.config.ts`. In v4, these should usually be defined using CSS variables within the '@theme' directive in your main CSS file. Only keep extensions necessary for plugins (like keyframes/animations) here.
+    file_patterns: ["**/tailwind.config.{js,ts}"]
+  - pattern: "tailwindcss" # Match tailwindcss in postcss config
+    message: |
+      [Tailwind v4] Found `postcss.config.mjs`. If this file *only* configures Tailwind CSS, it's likely unnecessary with Next.js v14+ and Tailwind v4, as Next.js handles PostCSS integration. Consider removing it.
+    file_patterns: ["**/postcss.config.mjs"]
+
+  # --- ESLint v9 Flat Config Checks ---
+  - pattern: "FlatCompat" # Match usage of FlatCompat
+    message: |
+      [ESLint v9] Found `FlatCompat`. ESLint v9 uses Flat Config natively. Refactor shared ESLint configs (like @repo/eslint-config-custom) to export a flat config array directly (e.g., `module.exports = [...]` or `export default [...]`). App configs (`eslint.config.mjs`) should import and spread this array (`...sharedConfigArray`) instead of using `FlatCompat`.
+    file_patterns: ["**/eslint.config.mjs"] # Check in app configs
+  - pattern: "module.exports\\s*=\\s*(?!\\s*\\[)" # Match module.exports = NOT followed by [
+    message: |
+      [ESLint v9] Shared ESLint config (`@repo/eslint-config-custom/index.js`) should export a Flat Config *array* (`module.exports = [...]`). Ensure the top-level export is an array.
+    file_patterns: ["**/packages/eslint-config-custom/index.js"] # Check shared config
+  - pattern: "\\.\\.\\.compat\\.extends" # Match spreading compat.extends
+    message: |
+      [ESLint v9] Found spreading of `compat.extends(...)`. In Flat Config, import the shared config array directly and spread it (e.g., `...eslintConfigCustom`). Remove `FlatCompat` usage.
+    file_patterns: ["**/eslint.config.mjs"]
