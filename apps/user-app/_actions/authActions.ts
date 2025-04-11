@@ -1,34 +1,84 @@
 // apps/user-app/_actions/authActions.ts
+// APPLY THE FULL CODE FROM THE PREVIOUS RESPONSE HERE
+// Key changes:
+// - Handling AuthResponseDTO (accessToken, refreshToken, isNewUser)
+// - Using setFrontendSession helper
+// - Using decodeUserIdFromJwt helper (or adapting if backend sends userId)
+// - Updated logoutAction logic
+// - Added refreshAction placeholder
 'use server';
 
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import apiClient, { APIError } from '@repo/api-client';
-import type { AuthResponseDTO, LoginRequestDTO, RegisterRequestDTO, GoogleCallbackRequestDTO } from '@repo/types';
-// NOTE: Cannot directly import functions/variables from Route Handlers.
-// Actions must call the API route handler via fetch if they need to modify the session cookie.
-// Or use iron-session directly with cookies() if preferred (requires sharing sessionOptions carefully).
+import type {
+    AuthResponseDTO, // Updated type
+    LoginRequestDTO,
+    RegisterRequestDTO,
+    GoogleCallbackRequestDTO,
+    RefreshRequestDTO, // Added type
+    LogoutRequestDTO,  // Added type
+} from '@repo/types';
+// Assuming session management via internal API route
 
 // Action Result Type
 interface ActionResult {
     success: boolean;
     message?: string;
+    isNewUser?: boolean; // For Google callback
 }
 
-// Fetch URL Helper (needed because actions run server-side but might call own API routes)
+// Fetch URL Helper (No change)
 function getAppUrl() {
-    // Use NEXT_PUBLIC_APP_URL if set (for local dev hitting localhost),
-    // fallback to VERCEL_URL (production on Vercel), or require explicit setup
     const url = process.env.NEXT_PUBLIC_APP_URL || process.env.VERCEL_URL;
     if (!url) {
-        // Throw error only if absolutely needed, otherwise relative might work sometimes
-        // but absolute is safer for server->server fetch
          console.warn("Warning: APP_URL environment variable is not set. API calls to self might fail.");
-         return ""; // Or throw new Error("APP_URL environment variable is not set");
+         return "";
     }
-     // Ensure it starts with http
      return url.startsWith('http') ? url : `https://${url}`;
 }
+
+// Helper to call the internal session API route
+async function setFrontendSession(userId: string): Promise<boolean> {
+    const appUrl = getAppUrl();
+    if (!appUrl) {
+        console.error("Cannot set session: Application URL not configured.");
+        return false;
+    }
+    try {
+        const sessionResponse = await fetch(`${appUrl}/api/auth/session`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId: userId }), // Send extracted user ID
+        });
+        if (!sessionResponse.ok) {
+            const errorBody = await sessionResponse.text();
+            console.error("Failed to set session via API route:", sessionResponse.status, errorBody);
+            return false;
+        }
+        console.log("Frontend session cookie set successfully for user:", userId);
+        return true;
+    } catch (error) {
+        console.error("Error calling internal session API:", error);
+        return false;
+    }
+}
+
+// Helper to decode User ID from JWT (Placeholder - Requires actual JWT library)
+function decodeUserIdFromJwt(token: string): string | null {
+    // !!! Placeholder Implementation !!!
+    try {
+        const parts = token.split('.');
+        if (parts.length !== 3) return null;
+        const payload = JSON.parse(atob(parts[1]));
+        // Standard JWT claim for subject is 'sub'. 'uid' might be custom.
+        return payload.sub || payload.uid || null;
+    } catch (e) {
+        console.error("Failed to decode JWT (placeholder)", e);
+        return null;
+    }
+}
+
 
 // Login Action
 export async function loginAction(previousState: ActionResult | null, formData: FormData): Promise<ActionResult> {
@@ -41,50 +91,31 @@ export async function loginAction(previousState: ActionResult | null, formData: 
 
     try {
         const loginData: LoginRequestDTO = { email, password };
-        // 1. Call Go backend API
-        const authResponse = await apiClient<AuthResponseDTO>('/auth/login', {
+        const authResponse = await apiClient<AuthResponseDTO>('/auth/login', { // Expects AuthResponseDTO
             method: 'POST',
             body: JSON.stringify(loginData),
         });
 
-        if (authResponse?.token) {
-            // 2. Extract User ID from backend token (THIS IS CRUCIAL AND DEPENDS ON YOUR BACKEND JWT)
-            //    !!! Replace this with your actual token parsing logic !!!
-            const decodedUserId = "user-id-from-backend-jwt-decode"; // Placeholder
-             if (!decodedUserId) {
-                throw new Error("Could not extract user ID from backend token.");
-             }
-
-            // 3. Call internal Session API Route Handler to set the secure cookie
-            const appUrl = getAppUrl();
-            if (!appUrl) return { success: false, message: "Application URL not configured." };
-
-            const sessionResponse = await fetch(`${appUrl}/api/auth/session`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ userId: decodedUserId }), // Send extracted user ID
-            });
-
-            if (!sessionResponse.ok) {
-                const errorBody = await sessionResponse.text();
-                console.error("Failed to set session via API route:", sessionResponse.status, errorBody);
-                throw new Error('Failed to save session state.');
-            }
-
-            // 4. Invalidate cache and signal success (redirect happens client-side)
-            revalidatePath('/', 'layout');
-            return { success: true };
-        } else {
-            // Should not happen if backend API is correct
-            return { success: false, message: 'Login failed: Invalid response from server.' };
+        const userId = decodeUserIdFromJwt(authResponse.accessToken);
+        if (!userId) {
+            console.error("Login Action: Could not determine user ID from backend response.");
+            return { success: false, message: 'Login failed: Could not establish session.' };
         }
+
+        const sessionSet = await setFrontendSession(userId);
+        if (!sessionSet) {
+            return { success: false, message: 'Login failed: Could not save session state.' };
+        }
+
+        revalidatePath('/', 'layout');
+        // Optionally: Store refresh token securely if managing client-side refresh
+        // storeRefreshToken(authResponse.refreshToken);
+        return { success: true };
 
     } catch (error) {
         console.error("Login Action Error:", error);
         if (error instanceof APIError) {
-            if (error.status === 401) {
-                return { success: false, message: 'Invalid email or password.' };
-            }
+            if (error.status === 401) return { success: false, message: 'Invalid email or password.' };
             return { success: false, message: error.message || 'Login failed due to an API error.' };
         }
         return { success: false, message: 'An unexpected error occurred during login.' };
@@ -102,33 +133,27 @@ export async function registerAction(previousState: ActionResult | null, formDat
 
     try {
         const registerData: RegisterRequestDTO = { email, password, name };
-        // 1. Call Go backend API
-        const authResponse = await apiClient<AuthResponseDTO>('/auth/register', {
+        const authResponse = await apiClient<AuthResponseDTO>('/auth/register', { // Expects AuthResponseDTO
             method: 'POST',
             body: JSON.stringify(registerData),
         });
 
-        if (authResponse?.token) {
-             // 2. Extract User ID
-             const decodedUserId = "user-id-from-backend-jwt-decode"; // Placeholder
-             if (!decodedUserId) { throw new Error("Could not extract user ID from backend token."); }
-
-             // 3. Call internal Session API Route
-             const appUrl = getAppUrl();
-             if (!appUrl) return { success: false, message: "Application URL not configured." };
-             const sessionResponse = await fetch(`${appUrl}/api/auth/session`, {
-                 method: 'POST',
-                 headers: { 'Content-Type': 'application/json' },
-                 body: JSON.stringify({ userId: decodedUserId }),
-             });
-             if (!sessionResponse.ok) { throw new Error('Failed to save session state.'); }
-
-             // 4. Invalidate cache and signal success
-             revalidatePath('/', 'layout');
-             return { success: true };
-        } else {
-            return { success: false, message: 'Registration failed: Invalid response.' };
+        const userId = decodeUserIdFromJwt(authResponse.accessToken);
+        if (!userId) {
+            console.error("Register Action: Could not determine user ID from backend response.");
+            return { success: false, message: 'Registration failed: Could not establish session.' };
         }
+
+         const sessionSet = await setFrontendSession(userId);
+         if (!sessionSet) {
+            return { success: false, message: 'Registration failed: Could not save session state.' };
+         }
+
+         revalidatePath('/', 'layout');
+         // Optionally: Store refresh token
+         // storeRefreshToken(authResponse.refreshToken);
+         return { success: true };
+
     } catch (error) {
         console.error("Register Action Error:", error);
          if (error instanceof APIError) {
@@ -140,38 +165,32 @@ export async function registerAction(previousState: ActionResult | null, formDat
 }
 
 // Google Callback Action
-export async function googleCallbackAction(idToken: string): Promise<ActionResult & { isNewUser?: boolean }> {
+export async function googleCallbackAction(idToken: string): Promise<ActionResult> {
      if (!idToken) { return { success: false, message: 'Google ID token is required.' }; }
 
      try {
          const callbackData: GoogleCallbackRequestDTO = { idToken };
-         // 1. Call Go backend
-         const authResponse = await apiClient<AuthResponseDTO>('/auth/google/callback', {
+         const authResponse = await apiClient<AuthResponseDTO>('/auth/google/callback', { // Expects AuthResponseDTO
              method: 'POST',
              body: JSON.stringify(callbackData),
          });
 
-         if (authResponse?.token) {
-             // 2. Extract User ID
-              const decodedUserId = "user-id-from-backend-jwt-decode"; // Placeholder
-             if (!decodedUserId) { throw new Error("Could not extract user ID from backend token."); }
-
-             // 3. Call internal Session API Route
-             const appUrl = getAppUrl();
-             if (!appUrl) return { success: false, message: "Application URL not configured." };
-             const sessionResponse = await fetch(`${appUrl}/api/auth/session`, {
-                 method: 'POST',
-                 headers: { 'Content-Type': 'application/json' },
-                 body: JSON.stringify({ userId: decodedUserId }),
-             });
-             if (!sessionResponse.ok) { throw new Error('Failed to save session state.'); }
-
-             // 4. Invalidate cache and signal success
-             revalidatePath('/', 'layout');
-             return { success: true, isNewUser: authResponse.isNewUser }; // Include isNewUser flag
-         } else {
-             return { success: false, message: 'Google authentication failed: Invalid response.' };
+         const userId = decodeUserIdFromJwt(authResponse.accessToken);
+         if (!userId) {
+             console.error("Google Callback Action: Could not determine user ID from backend response.");
+             return { success: false, message: 'Google Sign-In failed: Could not establish session.' };
          }
+
+          const sessionSet = await setFrontendSession(userId);
+         if (!sessionSet) {
+            return { success: false, message: 'Google Sign-In failed: Could not save session state.' };
+         }
+
+         revalidatePath('/', 'layout');
+         // Optionally: Store refresh token
+         // storeRefreshToken(authResponse.refreshToken);
+         return { success: true, isNewUser: authResponse.isNewUser }; // Pass back isNewUser status
+
      } catch (error) {
          console.error("Google Callback Action Error:", error);
          if (error instanceof APIError) {
@@ -183,27 +202,72 @@ export async function googleCallbackAction(idToken: string): Promise<ActionResul
      }
 }
 
-// Logout Action
+// Logout Action (Updated)
 export async function logoutAction() {
+    let clearSessionApiError = false;
     const appUrl = getAppUrl();
     if (!appUrl) {
-         console.error("Cannot logout: Application URL not configured.");
-         // Should we still try to redirect? Maybe.
+         console.error("Cannot call internal logout API: Application URL not configured.");
+         clearSessionApiError = true;
     } else {
         try {
-             // Call internal Session API Route Handler to clear the cookie
+             // 1. Clear the frontend session cookie
              const response = await fetch(`${appUrl}/api/auth/session`, { method: 'DELETE' });
-             if (!response.ok) { console.error("Failed to clear session via API route"); }
+             if (!response.ok) {
+                 console.error("Failed to clear session via API route");
+                 clearSessionApiError = true;
+             }
         } catch (error) {
-            console.error("Error calling logout API route:", error);
+            console.error("Error calling internal logout API route:", error);
+            clearSessionApiError = true;
         }
     }
 
-    // Clear cookie directly using next/headers
-    // const session = await getIronSession<SessionData>(cookies(), sessionOptions);
-    // session.destroy();
+    // 2. Call Backend Logout (If refresh token is accessible - often not in this simple setup)
+    // const refreshToken = getClientSideRefreshToken(); // Hypothetical function
+    // if (refreshToken) {
+    //     try {
+    //         const logoutData: LogoutRequestDTO = { refreshToken };
+    //         await apiClient<void>('/auth/logout', { method: 'POST', body: JSON.stringify(logoutData) });
+    //         console.log("Backend refresh token invalidated.");
+    //         clearClientSideRefreshToken(); // Clear storage
+    //     } catch (error) {
+    //         console.error("Error calling backend /auth/logout:", error);
+    //     }
+    // }
 
-    // Revalidate and redirect regardless of API call success
+    // 3. Revalidate and redirect
     revalidatePath('/', 'layout');
     redirect('/login');
+}
+
+// Refresh Action (Placeholder - Requires Client-Side Token Management)
+export async function refreshAction(refreshToken: string): Promise<ActionResult & { newAccessToken?: string; newRefreshToken?: string }> {
+    // This action would typically be called via client-side JavaScript, not a form.
+    // It needs to receive the *current* refresh token.
+    if (!refreshToken) {
+        return { success: false, message: 'Refresh token is required.' };
+    }
+    try {
+        const refreshData: RefreshRequestDTO = { refreshToken };
+        const authResponse = await apiClient<AuthResponseDTO>('/auth/refresh', { // Expects AuthResponseDTO
+            method: 'POST',
+            body: JSON.stringify(refreshData),
+        });
+
+        // The action *must return* the new tokens to the client-side caller
+        // so it can update its state/storage.
+        return {
+            success: true,
+            newAccessToken: authResponse.accessToken,
+            newRefreshToken: authResponse.refreshToken,
+        };
+
+    } catch (error) {
+        console.error("Refresh Action Error:", error);
+        if (error instanceof APIError && error.status === 401) {
+             return { success: false, message: 'Session expired. Please log in again.' }; // Refresh token invalid
+        }
+        return { success: false, message: 'Failed to refresh session.' };
+    }
 }

@@ -1,13 +1,13 @@
 // packages/types/src/index.ts
 
 // --- Common/Pagination ---
+// No changes needed based on doc.json
 
 /** Standardized error response structure */
 export interface ErrorResponseDTO {
-  code: string; // e.g., "INVALID_INPUT", "NOT_FOUND", "UNAUTHENTICATED", "INTERNAL_ERROR"
-  message: string; // User-friendly error message
-  requestId?: string; // Optional request ID for tracing
-  // details?: Record<string, string>; // Optional validation details map
+  code: string;
+  message: string;
+  requestId?: string;
 }
 
 /** Standardized paginated response structure */
@@ -16,7 +16,7 @@ export interface PaginatedResponseDTO<T> {
   total: number;
   limit: number;
   offset: number;
-  page: number;       // Current page (1-based)
+  page: number;
   totalPages: number;
 }
 
@@ -24,165 +24,214 @@ export interface PaginatedResponseDTO<T> {
 
 export interface RegisterRequestDTO {
   email: string;
-  password?: string; // Password required for 'local' provider registration
+  password?: string; // Keep optional if supporting external providers primarily
   name: string;
 }
 
 export interface LoginRequestDTO {
   email: string;
-  password?: string; // Required for 'local' provider login
+  password?: string; // Keep optional
 }
 
 export interface GoogleCallbackRequestDTO {
   idToken: string;
 }
 
+// ADDED: Refresh Token Request DTO
+export interface RefreshRequestDTO {
+  refreshToken: string;
+}
+
+// ADDED: Logout Request DTO
+export interface LogoutRequestDTO {
+  refreshToken: string;
+}
+
+// MODIFIED: AuthResponseDTO to include refreshToken
 export interface AuthResponseDTO {
-  token: string;       // Application's JWT
+  accessToken: string; // Changed from 'token' for clarity, matches doc.json
+  refreshToken: string; // Added non-optional refresh token
   isNewUser?: boolean; // True if external auth resulted in new account creation
 }
 
 // --- User DTOs ---
-
-export type AuthProvider = 'local' | 'google'; // Expand as needed
+// No changes needed based on doc.json
+export type AuthProvider = 'local' | 'google';
 
 export interface UserResponseDTO {
-  id: string; // UUID string
+  id: string;
   email: string;
   name: string;
   authProvider: AuthProvider;
   profileImageUrl?: string | null;
-  createdAt: string; // ISO 8601 date-time string (e.g., "2023-10-27T10:00:00Z")
-  updatedAt: string; // ISO 8601 date-time string
-  // DO NOT include password hash or sensitive details here
-  // Add 'isAdmin' or 'roles' if needed for context, especially for admin app session GET
+  createdAt: string;
+  updatedAt: string;
   isAdmin?: boolean;
 }
 
 // --- Audio Track DTOs ---
+// No changes needed based on doc.json (durationMs already used)
+export type AudioLevel = "A1" | "A2" | "B1" | "B2" | "C1" | "C2" | "NATIVE" | "";
 
-export type AudioLevel = "A1" | "A2" | "B1" | "B2" | "C1" | "C2" | "NATIVE" | ""; // "" or null represents Unknown/Not Set
-
-// Basic track info used in lists and general display
 export interface AudioTrackResponseDTO {
-  id: string; // UUID string
+  id: string;
   title: string;
   description?: string | null;
-  languageCode: string; // e.g., "en-US"
+  languageCode: string;
   level?: AudioLevel | null;
-  durationMs: number; // Duration in milliseconds (use number for easier calculations)
+  durationMs: number; // Stays as number (milliseconds)
   coverImageUrl?: string | null;
-  uploaderId?: string | null; // UUID string
+  uploaderId?: string | null;
   isPublic: boolean;
   tags?: string[] | null;
-  createdAt: string; // ISO 8601 date-time string
-  updatedAt: string; // ISO 8601 date-time string
+  createdAt: string;
+  updatedAt: string;
 }
 
-// Detailed track info, includes the temporary playback URL
 export interface AudioTrackDetailsResponseDTO extends AudioTrackResponseDTO {
-  playUrl: string; // Presigned URL (potentially empty if generation failed or no permission)
+  playUrl: string;
+  // User activity also uses ms
+  userProgressMs?: number | null; // Make null instead of undefined for consistency
+  userBookmarks?: BookmarkResponseDTO[] | null;
 }
 
-// DTO for finalizing an upload and creating track metadata (used by Admin and potentially User Upload feature)
 export interface CompleteUploadRequestDTO {
   objectKey: string;
   title: string;
   description?: string | null;
   languageCode: string;
-  level?: AudioLevel | null; // Allow null/empty
-  durationMs: number; // Required, must be > 0
-  isPublic?: boolean | null; // Allow default handling if null
+  level?: AudioLevel | null;
+  durationMs: number; // Keep as number (milliseconds)
+  isPublic?: boolean | null;
   tags?: string[] | null;
   coverImageUrl?: string | null;
 }
 
-// --- Audio Collection DTOs ---
 
+// --- Audio Collection DTOs ---
+// No changes needed based on doc.json
 export type CollectionType = "COURSE" | "PLAYLIST";
 
-// Request DTO for creating a collection
 export interface CreateCollectionRequestDTO {
   title: string;
   description?: string | null;
   type: CollectionType;
-  initialTrackIds?: string[] | null; // Array of UUID strings
+  initialTrackIds?: string[] | null;
 }
 
-// Request DTO for updating collection metadata
 export interface UpdateCollectionRequestDTO {
-  title?: string | null; // Fields are optional for updates
+  title?: string | null;
   description?: string | null;
 }
 
-// Request DTO for updating the ordered list of tracks in a collection
 export interface UpdateCollectionTracksRequestDTO {
-  orderedTrackIds: string[]; // Required: Full ordered list of UUID strings
+  orderedTrackIds: string[];
 }
 
-// Response DTO for a collection (details might include tracks)
 export interface AudioCollectionResponseDTO {
-  id: string; // UUID string
+  id: string;
   title: string;
   description?: string | null;
-  ownerId: string; // UUID string
+  ownerId: string;
   type: CollectionType;
-  createdAt: string; // ISO 8601 date-time string
-  updatedAt: string; // ISO 8601 date-time string
-  tracks?: AudioTrackResponseDTO[] | null; // Populated in detail endpoints
-  trackCount?: number; // Optional: Count might be included in list views
+  createdAt: string;
+  updatedAt: string;
+  tracks?: AudioTrackResponseDTO[] | null;
+  trackCount?: number;
 }
 
 // --- User Activity DTOs ---
-
-// Request DTO for recording progress
+// No changes needed based on doc.json (already using ms)
 export interface RecordProgressRequestDTO {
-  trackId: string; // UUID string
-  progressMs: number; // Progress in milliseconds
+  trackId: string;
+  progressMs: number;
 }
 
-// Response DTO for playback progress
 export interface PlaybackProgressResponseDTO {
-  userId: string; // UUID string
-  trackId: string; // UUID string
-  progressMs: number; // Progress in milliseconds
-  lastListenedAt: string; // ISO 8601 date-time string
+  userId: string;
+  trackId: string;
+  progressMs: number;
+  lastListenedAt: string;
 }
 
-// Request DTO for creating a bookmark
 export interface CreateBookmarkRequestDTO {
-  trackId: string; // UUID string
-  timestampMs: number; // Timestamp in milliseconds
+  trackId: string;
+  timestampMs: number;
   note?: string | null;
 }
 
-// Response DTO for a bookmark
 export interface BookmarkResponseDTO {
-  id: string; // UUID string
-  userId: string; // UUID string
-  trackId: string; // UUID string
-  timestampMs: number; // Timestamp in milliseconds
+  id: string;
+  userId: string;
+  trackId: string;
+  timestampMs: number;
   note?: string | null;
-  createdAt: string; // ISO 8601 date-time string
+  createdAt: string;
 }
 
 // --- Upload DTOs ---
-
-// Request DTO for requesting a presigned upload URL
+// No changes needed for single upload based on doc.json
 export interface RequestUploadRequestDTO {
     filename: string;
-    contentType: string; // e.g., "audio/mpeg"
+    contentType: string;
 }
 
-// Response DTO after requesting an upload URL
 export interface RequestUploadResponseDTO {
-    uploadUrl: string; // The presigned PUT URL
-    objectKey: string; // The key the client should use for upload and report back
+    uploadUrl: string;
+    objectKey: string;
 }
 
-// --- Query Parameter Interfaces (for documentation/type safety) ---
+// --- ADDED: Batch Upload DTOs ---
 
-// Combined Params for flexibility, use Partial<> if needed
+export interface BatchRequestUploadInputItemDTO {
+    filename: string;
+    contentType: string;
+}
+
+export interface BatchRequestUploadInputRequestDTO {
+    files: BatchRequestUploadInputItemDTO[];
+}
+
+export interface BatchRequestUploadInputResponseItemDTO {
+    originalFilename: string;
+    objectKey: string;
+    uploadUrl: string;
+    error?: string;
+}
+
+export interface BatchRequestUploadInputResponseDTO {
+    results: BatchRequestUploadInputResponseItemDTO[];
+}
+
+export interface BatchCompleteUploadItemDTO {
+    objectKey: string;
+    title: string;
+    description?: string | null;
+    languageCode: string;
+    level?: AudioLevel | null;
+    durationMs: number;
+    isPublic?: boolean | null;
+    tags?: string[] | null;
+    coverImageUrl?: string | null;
+}
+
+export interface BatchCompleteUploadInputDTO {
+    tracks: BatchCompleteUploadItemDTO[];
+}
+
+export interface BatchCompleteUploadResponseItemDTO {
+    objectKey: string;
+    success: boolean;
+    trackId?: string;
+    error?: string;
+}
+
+export interface BatchCompleteUploadResponseDTO {
+    results: BatchCompleteUploadResponseItemDTO[];
+}
+
+// --- Query Parameter Interfaces ---
+// No changes needed based on doc.json
 export interface ListTrackQueryParams {
   q?: string;
   lang?: string;
@@ -196,7 +245,7 @@ export interface ListTrackQueryParams {
 }
 
 export interface ListBookmarkQueryParams {
-    trackId?: string; // UUID string
+    trackId?: string;
     limit?: number;
     offset?: number;
 }
@@ -207,19 +256,17 @@ export interface ListProgressQueryParams {
 }
 
 export interface ListCollectionQueryParams {
-    // Add filters if needed (e.g., by type)
     limit?: number;
     offset?: number;
 }
 
 // Admin Specific Params
+// No changes needed based on doc.json
 export interface AdminListUsersParams {
-    q?: string; // Search by email or name
-    provider?: AuthProvider; // Filter by auth provider
+    q?: string;
+    provider?: AuthProvider;
     limit?: number;
     offset?: number;
     sortBy?: 'email' | 'name' | 'createdAt';
     sortDir?: 'asc' | 'desc';
 }
-
-// Add other admin list params (tracks, collections) if different from user params
