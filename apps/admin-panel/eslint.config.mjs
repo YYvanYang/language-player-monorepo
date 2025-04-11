@@ -1,20 +1,23 @@
 // apps/admin-panel/eslint.config.mjs
-// Assuming FlatCompat setup is standard across apps
-import { dirname } from "path";
-import { fileURLToPath } from "url";
-import { FlatCompat } from "@eslint/eslintrc";
+import eslintConfigCustom from '@repo/eslint-config-custom'; // Import the shared flat config array
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
-const compat = new FlatCompat({
-  baseDirectory: __dirname,
-});
-
+/** @type {import('eslint').Linter.Config[]} */
 const eslintConfig = [
-  // Use the shared eslint-config-custom which extends next/core-web-vitals etc.
-  // Adjust if you need admin-panel specific overrides
-  ...compat.extends("custom"),
+  // Spread the shared configurations
+  ...eslintConfigCustom,
+
+  // Add admin-panel specific overrides or configurations here
+  // Example: Allow console logs in admin actions
+  // {
+  //   files: ["_actions/**/*.ts"],
+  //   rules: {
+  //     "no-console": "off",
+  //   },
+  // },
+  // Example: Ignore specific admin files
+  // {
+  //   ignores: ["_components/legacy/**"],
+  // }
 ];
 
 export default eslintConfig;

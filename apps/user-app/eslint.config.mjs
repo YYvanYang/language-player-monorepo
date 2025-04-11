@@ -1,23 +1,19 @@
 // apps/user-app/eslint.config.mjs
-import { dirname } from "path";
-import { fileURLToPath } from "url";
-import { FlatCompat } from "@eslint/eslintrc";
+import eslintConfigCustom from '@repo/eslint-config-custom'; // Import the shared flat config array
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
-const compat = new FlatCompat({
-  baseDirectory: __dirname,
-});
-
+/** @type {import('eslint').Linter.Config[]} */
 const eslintConfig = [
-  // Use the shared eslint-config-custom which extends next/core-web-vitals etc.
-   ...compat.extends("custom"),
-   // Add any user-app specific overrides here if needed
-   // {
-   //   files: ["_components/player/**/*.tsx"],
-   //   rules: { ... }
-   // }
+  // Spread the shared configurations
+  ...eslintConfigCustom,
+
+  // Add user-app specific overrides or configurations here
+  // Example: Stricter rules for player components
+  // {
+  //   files: ["_components/player/**/*.tsx"],
+  //   rules: {
+  //       "@typescript-eslint/no-explicit-any": "error", // Make 'any' an error here
+  //   },
+  // },
 ];
 
 export default eslintConfig;

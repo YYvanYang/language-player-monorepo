@@ -1,48 +1,92 @@
 // packages/eslint-config-custom/index.js
-module.exports = {
-    // Base configurations recommended for Next.js + TypeScript projects
-    extends: [
-      'eslint:recommended', // ESLint's recommended rules
-      'plugin:@typescript-eslint/recommended', // Recommended TS rules
-      'next/core-web-vitals', // Next.js specific rules + React hooks + Accessibility
-      'plugin:tailwindcss/recommended', // Tailwind CSS specific rules (if using plugin)
-      // 'prettier', // Add prettier if you want it to handle formatting rules, requires eslint-config-prettier
-    ],
-    parser: '@typescript-eslint/parser', // Use the TS parser
-    plugins: [
-      '@typescript-eslint',
-      'tailwindcss', // Add plugin if used
-    ],
-    rules: {
-      // Customize or override rules here
-      '@typescript-eslint/no-unused-vars': ['warn', { 'argsIgnorePattern': '^_', 'varsIgnorePattern': '^_' }], // Warn on unused vars, allowing underscore prefix
-      '@typescript-eslint/no-explicit-any': 'warn', // Warn against using 'any'
-      'no-console': ['warn', { allow: ['warn', 'error'] }], // Warn on console.log/info/debug
-      // Add specific Tailwind rules if needed
-       "tailwindcss/no-custom-classname": "off", // Allow custom class names if needed
-       "tailwindcss/classnames-order": "warn", // Suggest ordering Tailwind classes
-       // Next.js specific overrides if needed
-       "@next/next/no-img-element": "warn", // Suggest using next/image
-    },
-    // Ignore patterns if needed within this config
-    ignorePatterns: [
-      "node_modules/",
-      ".next/",
-      "out/",
-      "dist/",
-      "*.config.js", // Ignore JS config files at root of package
-      "*.config.mjs",
-    ],
-    // Settings for plugins like react version
-    settings: {
-      react: {
-        version: 'detect', // Automatically detect React version
-      },
-    },
-     // Environment settings
-     env: {
+
+// Import necessary plugins and parsers for flat config
+// Note: Adjust plugin/parser names if they change in future versions
+// Check compatibility of plugins with ESLint v9 flat config.
+const eslint = require('@eslint/js');
+const tseslint = require('typescript-eslint');
+const nextPlugin = require('@next/eslint-plugin-next');
+const reactPlugin = require('eslint-plugin-react');
+const hooksPlugin = require('eslint-plugin-react-hooks');
+const tailwindPlugin = require('eslint-plugin-tailwindcss');
+// Ensure prettier setup is compatible if used (prettier as formatter is preferred over eslint-config-prettier)
+
+// Base configuration reusable across apps/packages
+const baseConfig = {
+  files: ["**/*.{js,mjs,cjs,ts,jsx,tsx}"], // Apply to all relevant files
+  languageOptions: {
+    // Specify globals (e.g., browser, node) - inherited or specified per section
+    globals: {
+      React: 'readonly', // Define React global if needed, though import is preferred
       browser: true,
       node: true,
       es2021: true,
     },
-  };
+    parser: tseslint.parser, // Use TypeScript parser
+    parserOptions: {
+      ecmaFeatures: { jsx: true }, // Enable JSX parsing
+      ecmaVersion: 'latest',
+      sourceType: 'module',
+    },
+  },
+  plugins: {
+    '@typescript-eslint': tseslint.plugin,
+    react: reactPlugin,
+    'react-hooks': hooksPlugin,
+    tailwindcss: tailwindPlugin,
+    '@next/next': nextPlugin, // Next.js specific plugin
+  },
+  rules: {
+    // --- ESLint Recommended ---
+    ...eslint.configs.recommended.rules,
+    // --- TypeScript Recommended ---
+    ...tseslint.configs.recommended.rules, // Use recommended rules from typescript-eslint
+    // --- React Recommended ---
+    ...reactPlugin.configs.recommended.rules,
+    // --- React Hooks ---
+    ...hooksPlugin.configs.recommended.rules,
+    // --- Tailwind ---
+    ...tailwindPlugin.configs.recommended.rules,
+    // --- Next.js ---
+    ...nextPlugin.configs['core-web-vitals'].rules, // Use Next.js core web vitals preset
+
+    // --- Custom Overrides ---
+    'no-console': ['warn', { allow: ['warn', 'error'] }],
+    '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+    '@typescript-eslint/no-explicit-any': 'warn', // Keep warning on 'any'
+    "react/react-in-jsx-scope": "off", // Not needed with React 17+ JSX transform
+    "react/prop-types": "off", // Not needed with TypeScript
+    // Keep Tailwind overrides if necessary
+    "tailwindcss/no-custom-classname": "off",
+    "tailwindcss/classnames-order": "warn",
+    // Next.js override example
+    "@next/next/no-img-element": "warn", // Prefer next/image
+
+    // Add any other project-specific rules
+  },
+  settings: {
+    react: {
+      version: 'detect', // Detect React version automatically
+    },
+  },
+  ignores: [
+    // Keep ignore patterns consistent
+    "node_modules/",
+    ".turbo/",
+    "dist/",
+    ".next/",
+    "out/",
+    "coverage/",
+    "*.config.js",
+    "*.config.mjs",
+    "*.config.ts", // Ignore TS config files too
+    "**/generated/**", // Example: ignore generated files
+  ],
+};
+
+// Export the configuration array directly for flat config
+module.exports = [
+    // Apply the base configuration
+    baseConfig,
+    // Add other configurations if needed (e.g., for specific file types or overrides)
+];
