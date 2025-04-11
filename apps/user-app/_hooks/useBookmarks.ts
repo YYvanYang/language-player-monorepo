@@ -3,14 +3,16 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { listUserBookmarks } from '@/_services/userService';
-import type { PaginatedResponseDTO, BookmarkResponseDTO } from '@repo/types';
-import type { PaginationParams } from '@/_lib/utils'; // Ensure PaginationParams is defined here or imported
+// Use specific DTOs and PaginationParams
+import type { PaginatedResponseDTO, BookmarkResponseDTO, ListBookmarkQueryParams } from '@repo/types';
+import type { PaginationParams } from '@repo/utils'; // Import PaginationParams if defined here
 
 // Query key factory for bookmark queries
 export const bookmarksQueryKeys = {
   base: ['bookmarks'] as const, // Root key
   userBase: (userId: string) => [...bookmarksQueryKeys.base, 'user', userId] as const,
-  list: (userId: string, params: PaginationParams & { trackId?: string }) =>
+  // Key for PAGINATED list, potentially filtered
+  list: (userId: string, params: ListBookmarkQueryParams) => // Use ListBookmarkQueryParams
     [...bookmarksQueryKeys.userBase(userId), 'list', params] as const,
   // Key for fetching ALL bookmarks for a specific track
   trackDetail: (userId: string, trackId: string) =>
@@ -20,7 +22,7 @@ export const bookmarksQueryKeys = {
 // Hook to fetch PAGINATED list of user bookmarks (can be filtered by trackId)
 export const useBookmarks = (
   userId: string | undefined,
-  params: PaginationParams & { trackId?: string }
+  params: ListBookmarkQueryParams // Use specific param type
 ) => {
   const queryKey = bookmarksQueryKeys.list(userId ?? 'guest', params);
 
@@ -49,12 +51,11 @@ export const useTrackBookmarks = (
        queryFn: async () => {
             if (!userId || !trackId) throw new Error("User or Track ID missing");
             // Fetch bookmarks for the specific track using the service.
-            // Assume listUserBookmarks with a large limit works, or use a dedicated endpoint if available.
-            // Setting a very high limit to simulate fetching "all".
-            const result = await listUserBookmarks({ trackId: trackId, limit: 500, offset: 0 });
-            return result.data ?? []; // Return the data array
+            // Use the service function with the trackId filter and a high limit.
+            const result = await listUserBookmarks({ trackId: trackId, limit: 500 }); // High limit
+            return result.data ?? []; // Return just the data array
        },
        enabled: !!userId && !!trackId, // Enable only when both IDs are present
        staleTime: 1 * 60 * 1000, // 1 minute stale time
    });
-};
+}

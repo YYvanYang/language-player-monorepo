@@ -1,35 +1,33 @@
 // apps/user-app/_components/ui/PaginationControls.tsx
 'use client';
 
-import React, { useCallback } from 'react';
+import React, { useCallback, useMemo } from 'react'; // Added useMemo
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { Button } from '@repo/ui';
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
-
-// Corrected Import Path for DefaultLimit
-import { DefaultLimit, MaxLimit } from '@repo/utils'; // Assuming constants are moved to utils or a dedicated constants package
+// CORRECTED IMPORT PATH
+import { DefaultLimit, MaxLimit } from '@repo/utils';
 
 interface PaginationControlsProps {
   totalItems: number;
-  itemsPerPage?: number; // Optional prop override
-  currentPage?: number; // Optional prop override
+  itemsPerPage?: number;
+  currentPage?: number;
 }
 
 export function PaginationControls({
   totalItems,
-  itemsPerPage: itemsPerPageProp,
-  currentPage: currentPageProp,
+  itemsPerPage: itemsPerPageProp, // Allow overriding limit via props
+  currentPage: currentPageProp, // Allow overriding page via props
 }: PaginationControlsProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  // Determine effective limit and page from props or URL params
+  // Use props first, then URL params, then defaults for limit and page
   const limit = useMemo(() => {
-      let l = itemsPerPageProp ?? parseInt(searchParams.get('limit') || '', 10);
+      let l = itemsPerPageProp ?? parseInt(searchParams.get('limit') || String(DefaultLimit), 10);
       if (isNaN(l) || l <= 0) l = DefaultLimit;
-      if (l > MaxLimit) l = MaxLimit;
-      return l;
+      return Math.min(l, MaxLimit);
   }, [itemsPerPageProp, searchParams]);
 
   const currentPage = useMemo(() => {
@@ -44,22 +42,24 @@ export function PaginationControls({
   const canGoNext = currentPage < totalPages;
 
   const handlePageChange = useCallback((pageNumber: number) => {
-    const current = new URLSearchParams(Array.from(searchParams.entries())); // Create mutable copy
+    const current = new URLSearchParams(Array.from(searchParams.entries()));
     current.set('page', String(pageNumber));
-    // Keep existing limit param or set default if changing page
-    if (!current.has('limit')) {
-       current.set('limit', String(limit));
+    // Only set limit param if it's different from default or was already present
+    if (limit !== DefaultLimit || searchParams.has('limit')) {
+        current.set('limit', String(limit));
+    } else {
+        current.delete('limit'); // Remove if default
     }
-    current.delete('offset'); // Prefer page over offset
+    current.delete('offset'); // Always prefer page param
 
     const search = current.toString();
     const query = search ? `?${search}` : "";
 
-    router.push(`${pathname}${query}`); // Navigate with new query params
+    router.push(`${pathname}${query}`);
   }, [searchParams, pathname, router, limit]);
 
   if (totalPages <= 1 || isNaN(totalPages)) {
-    return null; // Don't render if only one page or invalid state
+    return null;
   }
 
   return (

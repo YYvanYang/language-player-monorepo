@@ -16,24 +16,21 @@ interface AdminAuthResult {
 }
 
 // Define the expected structure of the SUCCESSFUL response from the Go backend's ADMIN login endpoint
-// NOTE: Adjust this if your backend admin login returns different fields
 interface GoAdminLoginSuccessResponse {
     // Assuming admin login returns user details similar to regular login,
     // plus potentially specific admin flags/roles if not derived from session.
     accessToken: string; // We don't use this directly, but backend sends it
     refreshToken: string; // We don't use this directly
-    user: UserResponseDTO; // Contains user ID and potentially isAdmin flag from DB
+    user: UserResponseDTO; // Contains user ID and *must* contain isAdmin: true
 }
 
-// Helper to call the internal session API route (POST)
-async function setAdminSession(userId: string, isAdminConfirmed: boolean): Promise<boolean> {
-    // Server Actions run on the server, directly call getIronSession
+// REFACTORED: Helper to set the admin session cookie directly using iron-session
+async function setAdminSessionCookie(userId: string, isAdminConfirmed: boolean): Promise<boolean> {
     if (!isAdminConfirmed) {
         console.warn("Admin Auth Action: Attempted to set session for non-admin user.");
-        return false; // Don't set session if backend didn't confirm admin
+        return false;
     }
     try {
-        // Set session directly in the Server Action context
         const session = await getIronSession<SessionData>(cookies(), getAdminSessionOptions());
         session.userId = userId;
         session.isAdmin = true; // Explicitly set admin flag
@@ -46,8 +43,8 @@ async function setAdminSession(userId: string, isAdminConfirmed: boolean): Promi
     }
 }
 
-// Helper to clear the admin session cookie directly
-async function clearAdminSession(): Promise<boolean> {
+// REFACTORED: Helper to clear the admin session cookie directly
+async function clearAdminSessionCookie(): Promise<boolean> {
      try {
         const session = await getIronSession<SessionData>(cookies(), getAdminSessionOptions());
         session.destroy();
@@ -59,6 +56,7 @@ async function clearAdminSession(): Promise<boolean> {
     }
 }
 
+// REFACTORED: Login Action to use direct session management
 export async function adminLoginAction(previousState: AdminAuthResult | null, formData: FormData): Promise<AdminAuthResult> {
     const email = formData.get('email') as string;
     const password = formData.get('password') as string;
@@ -77,16 +75,17 @@ export async function adminLoginAction(previousState: AdminAuthResult | null, fo
             body: JSON.stringify(loginData),
         });
 
-        // 2. Verify backend confirmed admin status (adjust based on backend response)
-        // Assuming the backend includes user details with an isAdmin flag or similar
+        // 2. Verify backend confirmed admin status
         const user = adminAuthResponse?.user;
+        // --- CRITICAL CHECK ---
         if (!user?.id || user?.isAdmin !== true) {
-             console.error(`Admin login error: Backend response missing userId or isAdmin flag for email: ${email}`);
+             console.error(`Admin login error: Backend response missing userId or isAdmin=true flag for email: ${email}`);
              return { success: false, message: 'Login failed: User not found or is not an administrator.' };
         }
+        // --- END CHECK ---
 
-        // 3. Set the admin session cookie directly in the server action
-        const sessionSet = await setAdminSession(user.id, true); // Pass admin confirmation
+        // 3. Set the admin session cookie DIRECTLY
+        const sessionSet = await setAdminSessionCookie(user.id, true); // Pass admin confirmation
          if (!sessionSet) {
              console.error(`Admin login error: Failed to set session cookie for userId: ${user.id}`);
              return { success: false, message: 'Login failed: Could not save session state.' };
@@ -95,7 +94,8 @@ export async function adminLoginAction(previousState: AdminAuthResult | null, fo
         // 4. Revalidate and prepare success state
         revalidatePath('/', 'layout'); // Revalidate admin layout/dashboard
         console.log(`Admin user ${user.id} logged in successfully.`);
-        return { success: true }; // Redirect happens in the component useEffect
+        // Redirect will be handled by the component's useEffect based on the success state
+        return { success: true };
 
     } catch (error) {
         console.error("Admin Login Action Error:", error);
@@ -108,9 +108,10 @@ export async function adminLoginAction(previousState: AdminAuthResult | null, fo
     }
 }
 
+// REFACTORED: Logout Action to use direct session management
 export async function adminLogoutAction() {
     // Clear the session cookie directly
-    await clearAdminSession();
+    await clearAdminSessionCookie();
 
     // Revalidate paths relevant after logout and redirect to admin login
     revalidatePath('/', 'layout'); // Revalidate the whole admin layout

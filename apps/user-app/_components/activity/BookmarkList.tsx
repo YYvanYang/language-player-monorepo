@@ -13,7 +13,7 @@ import { bookmarksQueryKeys } from '@/_hooks/useBookmarks'; // Import query keys
 
 interface BookmarkListProps {
   bookmarks: BookmarkResponseDTO[];
-  onSeek: (timeSeconds: number) => void;
+  onSeek: (timeSeconds: number) => void; // Callback to seek player
   isLoading?: boolean;
   trackId?: string; // Track ID IS needed for specific cache invalidation on delete
 }
@@ -26,9 +26,8 @@ export function BookmarkList({ bookmarks, onSeek, isLoading, trackId }: Bookmark
 
     const handleDelete = (bookmarkId: string, bookmarkNote?: string | null) => {
         if (isDeleting) return;
-        // Find the bookmark to get the timestamp for the confirmation message
         const bookmarkToDelete = bookmarks.find(b => b.id === bookmarkId);
-        if (!bookmarkToDelete) return; // Should not happen
+        if (!bookmarkToDelete) return;
 
         if (!window.confirm(`Delete bookmark${bookmarkNote ? ` "${bookmarkNote}"` : ''} at ${formatDuration(bookmarkToDelete.timestampMs)}?`)) {
             return;
@@ -36,23 +35,22 @@ export function BookmarkList({ bookmarks, onSeek, isLoading, trackId }: Bookmark
 
         setDeletingId(bookmarkId);
         startDeleteTransition(async () => {
-            const result = await deleteBookmarkAction(bookmarkId);
+            // MODIFIED: Pass trackId to the action
+            const result = await deleteBookmarkAction(bookmarkId, trackId);
             if (result.success) {
                 console.log(`Bookmark ${bookmarkId} deleted`);
-                // Invalidate relevant queries using the keys factory
+                // Invalidation logic (remains the same, action now handles invalidation based on provided trackId)
                 const userId = user?.id;
                 if (userId) {
-                    // Invalidate the user's overall bookmark list
                     queryClient.invalidateQueries({ queryKey: bookmarksQueryKeys.all(userId) });
-                    // If trackId is available, invalidate the specific track's bookmark query
                     if (trackId) {
                         queryClient.invalidateQueries({ queryKey: bookmarksQueryKeys.trackDetail(userId, trackId) });
                     }
                 }
-                // Optionally show success toast
+                 alert("Bookmark deleted!"); // Replace with toast
             } else {
                 console.error("Failed to delete bookmark:", result.message);
-                alert(`Error deleting bookmark: ${result.message || 'Unknown error'}`); // Simple feedback
+                alert(`Error deleting bookmark: ${result.message || 'Unknown error'}`);
             }
             setDeletingId(null);
         });
@@ -76,11 +74,10 @@ export function BookmarkList({ bookmarks, onSeek, isLoading, trackId }: Bookmark
                             key={bm.id}
                             className={cn(
                                 "flex justify-between items-center p-2 border rounded hover:bg-slate-50 dark:hover:bg-slate-800 dark:border-slate-700",
-                                isCurrentlyDeleting && "opacity-50 pointer-events-none" // Style while deleting
+                                isCurrentlyDeleting && "opacity-50 pointer-events-none"
                             )}
                         >
-                            {/* Seek Button/Area */}
-                             <button
+                            <button
                                 onClick={() => onSeek(bm.timestampMs / 1000)}
                                 className="flex-grow text-left hover:text-blue-600 dark:hover:text-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-300 rounded px-1 truncate disabled:hover:text-inherit"
                                 title={`Jump to ${formatDuration(bm.timestampMs)}`}
@@ -93,14 +90,12 @@ export function BookmarkList({ bookmarks, onSeek, isLoading, trackId }: Bookmark
                                      <span className="text-slate-400 dark:text-slate-500 text-sm italic"> (No note)</span>
                                 )}
                             </button>
-
-                             {/* Delete Button */}
                             <Tooltip>
                                 <TooltipTrigger asChild>
                                      <Button
                                         variant="ghost"
-                                        size="icon" // Make it an icon button
-                                        className="text-red-500 hover:text-red-700 hover:bg-red-100 dark:hover:bg-red-900/20 p-1 h-7 w-7 flex-shrink-0" // Adjust size/padding
+                                        size="icon"
+                                        className="text-red-500 hover:text-red-700 hover:bg-red-100 dark:hover:bg-red-900/20 p-1 h-7 w-7 flex-shrink-0"
                                         onClick={() => handleDelete(bm.id, bm.note)}
                                         disabled={isCurrentlyDeleting}
                                         aria-label={`Delete bookmark at ${formatDuration(bm.timestampMs)}`}

@@ -11,14 +11,14 @@ export interface SessionData {
 // Recommended: Use environment variables for secrets and names
 const DEFAULT_USER_SESSION_NAME = 'user_app_auth_session';
 const DEFAULT_ADMIN_SESSION_NAME = 'admin_panel_auth_session';
-const THIRTY_DAYS_IN_SECONDS = 30 * 24 * 60 * 60;
+// const THIRTY_DAYS_IN_SECONDS = 30 * 24 * 60 * 60; // Example for persistent login TTL
 
 // Base cookie options
 const baseCookieOptions: SessionOptions['cookieOptions'] = {
     secure: process.env.NODE_ENV === 'production',
     httpOnly: true,
     path: '/',
-    maxAge: undefined, // Default to session cookie (expires on browser close)
+    // REMOVED maxAge: undefined - use ttl: 0 for session cookies
 };
 
 // Function to get User App Session Options
@@ -26,23 +26,24 @@ export function getUserSessionOptions(): SessionOptions {
     const name = process.env.USER_SESSION_NAME || DEFAULT_USER_SESSION_NAME;
     const secret = process.env.USER_SESSION_SECRET;
 
+    // --- CRITICAL CHECK ---
     if (!secret || secret.length < 32) {
-        console.error("CRITICAL SECURITY WARNING: USER_SESSION_SECRET environment variable is missing, too short (< 32 chars), or not loaded correctly! Session encryption will fail.");
-        // Optionally throw an error in production builds
-        // if (process.env.NODE_ENV === 'production') {
-        //     throw new Error("USER_SESSION_SECRET environment variable is not configured correctly.");
-        // }
-        // For development, proceed with a warning but expect errors.
+        const message = "FATAL SECURITY WARNING: USER_SESSION_SECRET environment variable is missing or less than 32 characters long! Session encryption is compromised.";
+        console.error("\n" + "*".repeat(message.length) + "\n" + message + "\n" + "*".repeat(message.length) + "\n");
+        if (process.env.NODE_ENV === 'production') {
+            throw new Error("USER_SESSION_SECRET environment variable is not configured correctly.");
+        }
     }
+    // --- END CHECK ---
 
     return {
         cookieName: name,
-        password: secret || "fallback-insecure-user-secret-for-dev-only-32-chars", // Provide insecure fallback ONLY for dev if var missing
-        ttl: 0, // Session cookie (0 means session expires when browser closes)
-        // ttl: THIRTY_DAYS_IN_SECONDS, // Uncomment for persistent login (e.g., 30 days)
+        password: secret || "fallback-insecure-user-secret-for-dev-only-32-chars", // Fallback ONLY for dev
+        ttl: 0, // Session cookie (expires when browser closes)
+        // ttl: THIRTY_DAYS_IN_SECONDS, // Uncomment for persistent login
         cookieOptions: {
             ...baseCookieOptions,
-            sameSite: 'lax', // 'lax' is a good default for user apps
+            sameSite: 'lax', // Good default for user apps
         },
     };
 }
@@ -53,18 +54,26 @@ export function getAdminSessionOptions(): SessionOptions {
     const secret = process.env.ADMIN_SESSION_SECRET;
     const userSecret = process.env.USER_SESSION_SECRET;
 
+    // --- CRITICAL CHECKS ---
     if (!secret || secret.length < 32) {
-         console.error("CRITICAL SECURITY WARNING: ADMIN_SESSION_SECRET environment variable is missing, too short (< 32 chars), or not loaded correctly! Session encryption will fail.");
-        // Optionally throw an error in production builds
+         const message = "FATAL SECURITY WARNING: ADMIN_SESSION_SECRET environment variable is missing or less than 32 characters long! Session encryption is compromised.";
+         console.error("\n" + "*".repeat(message.length) + "\n" + message + "\n" + "*".repeat(message.length) + "\n");
+        if (process.env.NODE_ENV === 'production') {
+            throw new Error("ADMIN_SESSION_SECRET environment variable is not configured correctly.");
+        }
     }
     if (secret && userSecret && secret === userSecret) {
-         console.error("CRITICAL SECURITY WARNING: ADMIN_SESSION_SECRET must be DIFFERENT from USER_SESSION_SECRET!");
-        // Optionally throw an error
+         const message = "FATAL SECURITY WARNING: ADMIN_SESSION_SECRET must be DIFFERENT from USER_SESSION_SECRET!";
+         console.error("\n" + "*".repeat(message.length) + "\n" + message + "\n" + "*".repeat(message.length) + "\n");
+         if (process.env.NODE_ENV === 'production') {
+             throw new Error("Admin and User session secrets cannot be the same.");
+         }
     }
+    // --- END CHECKS ---
 
     return {
         cookieName: name,
-        password: secret || "fallback-insecure-admin-secret-for-dev-only-32-chars", // Provide insecure fallback ONLY for dev
+        password: secret || "fallback-insecure-admin-secret-for-dev-only-32-chars", // Fallback ONLY for dev
         ttl: 0, // Session cookie strongly recommended for admin panels
         cookieOptions: {
             ...baseCookieOptions,

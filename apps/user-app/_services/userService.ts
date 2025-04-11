@@ -5,19 +5,11 @@ import type {
     PaginatedResponseDTO,
     BookmarkResponseDTO,
     PlaybackProgressResponseDTO,
+    // Import specific query param types
+    ListProgressQueryParams,
+    ListBookmarkQueryParams,
 } from '@repo/types';
-// Corrected import path assuming utils is structured correctly
-import { buildQueryString, PaginationParams } from '@repo/utils';
-
-// Define specific param types, potentially extending shared PaginationParams
-export interface ListProgressParams extends PaginationParams {
-    // Add other filters if needed
-}
-
-export interface ListBookmarksParams extends PaginationParams {
-    trackId?: string; // Optional filter by track UUID
-}
-
+import { buildQueryString } from '@repo/utils';
 
 const USER_ME_ENDPOINT = '/users/me'; // Base for current user data
 
@@ -28,19 +20,19 @@ export async function getMyProfile(): Promise<UserResponseDTO> {
     const endpoint = `${USER_ME_ENDPOINT}`;
     console.log(`SERVICE: Fetching user profile from: ${endpoint}`);
     try {
-        // Auth handled by apiClient
         const response = await apiClient<UserResponseDTO>(endpoint);
         return response;
     } catch (error) {
         console.error("SERVICE: Error fetching user profile:", error);
-        throw error; // Re-throw
+        throw error;
     }
 }
 
 /**
  * Fetches the paginated list of playback progress records for the authenticated user.
  */
-export async function listUserProgress(params?: ListProgressParams): Promise<PaginatedResponseDTO<PlaybackProgressResponseDTO>> {
+// MODIFIED: Use specific param type
+export async function listUserProgress(params?: ListProgressQueryParams): Promise<PaginatedResponseDTO<PlaybackProgressResponseDTO>> {
     const queryString = buildQueryString(params);
     const endpoint = `${USER_ME_ENDPOINT}/progress${queryString}`;
     console.log(`SERVICE: Fetching user progress from: ${endpoint}`);
@@ -68,7 +60,7 @@ export async function getUserTrackProgress(trackId: string): Promise<PlaybackPro
         return response;
     } catch (error) {
         console.error(`SERVICE: Error fetching progress for track ${trackId}:`, error);
-        throw error; // Re-throw (apiClient should handle 404 mapping)
+        throw error;
     }
 }
 
@@ -76,9 +68,9 @@ export async function getUserTrackProgress(trackId: string): Promise<PlaybackPro
 /**
  * Fetches the paginated list of bookmarks for the authenticated user, optionally filtered by track.
  */
-export async function listUserBookmarks(params?: ListBookmarksParams): Promise<PaginatedResponseDTO<BookmarkResponseDTO>> {
+// MODIFIED: Use specific param type
+export async function listUserBookmarks(params?: ListBookmarkQueryParams): Promise<PaginatedResponseDTO<BookmarkResponseDTO>> {
     const queryString = buildQueryString(params);
-    // Endpoint for user's bookmarks
     const endpoint = `${USER_ME_ENDPOINT}/bookmarks${queryString}`;
     console.log(`SERVICE: Fetching user bookmarks from: ${endpoint}`);
     try {

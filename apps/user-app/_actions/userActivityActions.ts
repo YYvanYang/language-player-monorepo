@@ -24,11 +24,7 @@ async function getAuthenticatedUserID(): Promise<string | null> {
 export async function recordProgressAction(trackId: string, progressMs: number): Promise<{ success: boolean; message?: string }> {
     const userId = await getAuthenticatedUserID();
     if (!userId) {
-        // Allow unauthenticated users to call this but do nothing? Or return error?
-        // Returning success but doing nothing might be simpler for the UI.
-        // console.log("Record progress skipped: User not authenticated.");
-        // return { success: true };
-        // OR require auth:
+        // Require authentication to record progress
         return { success: false, message: "User not authenticated." };
     }
 
@@ -50,14 +46,13 @@ export async function recordProgressAction(trackId: string, progressMs: number):
         // console.log(`Progress recorded for user ${userId}, track ${trackId}: ${progressMs}ms`);
         // Optionally revalidate progress-related data if other components display it
         // revalidateTag(`progress-${userId}`);
-        // revalidateTag(`progress-${userId}-${trackId}`);
+        // revalidateTag(`progress-${userId}-${trackId}`); // Revalidate specific track progress
         return { success: true };
 
     } catch (error) {
         // Don't log overly verbose errors for progress updates if they happen frequently
         // console.error(`Error recording progress for user ${userId}, track ${trackId}:`, error);
         if (error instanceof APIError) {
-             // Handle specific errors like 404 Not Found for the track if needed
              if(error.status === 404) { return { success: false, message: "Track not found." }; }
              if (error.status === 401) { return { success: false, message: "Authentication required." }; }
             return { success: false, message: `Failed to record progress: ${error.message}` };
@@ -77,7 +72,7 @@ export async function createBookmarkAction(trackId: string, timestampMs: number,
      if (!userId) { return { success: false, message: "User not authenticated." }; }
      if (!trackId || timestampMs < 0) { return { success: false, message: "Invalid track ID or timestamp value." }; }
 
-     const requestData: CreateBookmarkRequestDTO = { trackId, timestampMs, note: note ?? undefined }; // Ensure null/empty note is handled
+     const requestData: CreateBookmarkRequestDTO = { trackId, timestampMs, note: note ?? undefined };
 
      try {
          // Endpoint: POST /users/me/bookmarks
@@ -87,10 +82,10 @@ export async function createBookmarkAction(trackId: string, timestampMs: number,
          });
 
          // Invalidate relevant TanStack Query caches or Next.js cache tags
-         revalidateTag(`bookmarks-${userId}`); // Invalidate user's general bookmark list
-         revalidateTag(`bookmarks-${userId}-${trackId}`); // Invalidate specific track bookmark list
-         // Invalidate track detail page if it shows bookmarks
-         revalidatePath(`/tracks/${trackId}`);
+         revalidateTag(`bookmarks-${userId}`);
+         revalidateTag(`bookmarks-${userId}-${trackId}`);
+         revalidatePath(`/tracks/${trackId}`); // Invalidate track detail page
+         revalidatePath(`/bookmarks`); // Invalidate main bookmarks page
 
          console.log(`Bookmark created for user ${userId}, track ${trackId}`);
          return { success: true, bookmark: createdBookmark, message: "Bookmark added." };
@@ -99,7 +94,7 @@ export async function createBookmarkAction(trackId: string, timestampMs: number,
         console.error(`Error creating bookmark for user ${userId}, track ${trackId}:`, error);
         if (error instanceof APIError) {
              if(error.status === 404) { return { success: false, message: "Track not found." }; }
-              if (error.status === 401) { return { success: false, message: "Authentication required." }; }
+             if (error.status === 401) { return { success: false, message: "Authentication required." }; }
              if (error.status === 400) { return { success: false, message: `Invalid input: ${error.message}` }; }
             return { success: false, message: `Failed to create bookmark: ${error.message}` };
         }
@@ -112,27 +107,24 @@ interface DeleteBookmarkResult {
      success: boolean;
      message?: string;
 }
-export async function deleteBookmarkAction(bookmarkId: string): Promise<DeleteBookmarkResult> {
-     const userId = await getAuthenticatedUserID(); // Needed for tag invalidation
+// ADDED optional trackId for more precise cache invalidation
+export async function deleteBookmarkAction(bookmarkId: string, trackId?: string): Promise<DeleteBookmarkResult> {
+     const userId = await getAuthenticatedUserID();
      if (!userId) { return { success: false, message: "User not authenticated." }; }
      if (!bookmarkId) { return { success: false, message: "Bookmark ID is required." }; }
 
      try {
          // Endpoint: DELETE /users/me/bookmarks/{bookmarkId}
-         // Backend handles ownership check
          await apiClient<void>(`/users/me/bookmarks/${bookmarkId}`, { method: 'DELETE' });
 
          // Invalidate caches
-         // We need the trackId associated with the bookmark to invalidate the specific track's list effectively.
-         // Option 1: Pass trackId to this action (might require UI change).
-         // Option 2: Invalidate all bookmark lists for the user (less precise).
          revalidateTag(`bookmarks-${userId}`); // Invalidate user's general bookmark list
-         // If trackId was passed: revalidateTag(`bookmarks-${userId}-${trackId}`);
-         // Invalidate the main bookmarks page path
-         revalidatePath(`/bookmarks`);
-         // Invalidate track detail page path if it shows bookmarks (need trackId)
-         // revalidatePath(`/tracks/${trackId}`);
-
+         revalidatePath(`/bookmarks`); // Invalidate main bookmarks page path
+         // Invalidate specific track list/page if trackId is provided
+         if (trackId) {
+             revalidateTag(`bookmarks-${userId}-${trackId}`);
+             revalidatePath(`/tracks/${trackId}`);
+         }
 
          console.log(`Bookmark deleted for user ${userId}, bookmark ${bookmarkId}`);
          return { success: true, message: "Bookmark deleted." };

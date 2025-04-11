@@ -28,9 +28,7 @@ export class APIError extends Error {
 /**
  * Retrieves the API base URL from environment variables.
  * Prefers NEXT_PUBLIC_API_BASE_URL (for client & server).
- * Falls back to a default relative path which might work for client-side calls
- * but could fail for server-side fetch if API is on a different origin.
- * Logs a warning if the variable is missing.
+ * Logs a warning if the variable is missing and falls back.
  * @returns {string} The API base URL.
  */
 function getApiBaseUrl(): string {
@@ -38,14 +36,10 @@ function getApiBaseUrl(): string {
     if (!baseUrl) {
         console.warn(
             "API Client Warning: NEXT_PUBLIC_API_BASE_URL environment variable is not set. " +
-            "Falling back to relative '/api/v1'. This may fail for server-side requests " +
-            "(Server Components, Actions, Route Handlers) if the API is hosted separately. " +
-            "Ensure NEXT_PUBLIC_API_BASE_URL is configured in your environment (.env.local, etc.) " +
-            "and exposed to the browser if needed."
+            "Ensure it's configured in your environment (.env.local, etc.). " +
+            "Falling back to relative '/api/v1'. This may fail for server-side requests."
         );
-        return "/api/v1"; // Fallback, suitable if Next.js hosts the API route proxy
-        // If API is always external, fallback could be e.g., "http://localhost:8080/api/v1"
-        // but env var is strongly preferred.
+        return "/api/v1"; // Adjust fallback if necessary
     }
     // Remove trailing slash if present
     return baseUrl.replace(/\/$/, '');
@@ -54,7 +48,6 @@ function getApiBaseUrl(): string {
 // --- Core API Client Function ---
 interface RequestOptions extends Omit<RequestInit, 'body'> {
     body?: any; // Allow structured data, FormData, etc.
-    // Custom options can be added here (e.g., timeout)
 }
 
 /**
@@ -72,6 +65,7 @@ async function apiClient<T>(
   endpoint: string,
   options: RequestOptions = {}
 ): Promise<T> {
+  // Ensure endpoint starts with a slash
   if (!endpoint.startsWith('/')) {
       console.warn(`API Client: Endpoint "${endpoint}" should start with '/'. Prepending automatically.`);
       endpoint = `/${endpoint}`;
@@ -84,25 +78,15 @@ async function apiClient<T>(
   // --- Prepare Body & Content-Type ---
   let bodyToSend: BodyInit | null = null;
   if (options.body !== undefined && options.body !== null) {
-    if (options.body instanceof FormData) {
+    if (options.body instanceof FormData || options.body instanceof URLSearchParams || options.body instanceof ArrayBuffer || options.body instanceof Blob || typeof options.body === 'string') {
+        // For these types, let fetch handle Content-Type or expect caller to set it
         bodyToSend = options.body;
-        // Browser sets Content-Type automatically for FormData
-        headers.delete('Content-Type'); // Ensure no manual Content-Type overrides FormData boundary
-    } else if (options.body instanceof URLSearchParams) {
-        bodyToSend = options.body;
-        if (!headers.has("Content-Type")) {
+        if(options.body instanceof FormData) {
+            headers.delete('Content-Type'); // Crucial for FormData
+        } else if(options.body instanceof URLSearchParams && !headers.has("Content-Type")) {
             headers.set("Content-Type", "application/x-www-form-urlencoded");
         }
-    } else if (options.body instanceof ArrayBuffer || options.body instanceof Blob) {
-        bodyToSend = options.body;
-        // Caller should set Content-Type appropriately
-    } else if (typeof options.body === 'string') {
-        bodyToSend = options.body;
-        // Default to text/plain if not set, allow overrides
-        if (!headers.has("Content-Type")) {
-            // headers.set("Content-Type", "text/plain;charset=UTF-8");
-        }
-    } else { // Assume JSON for objects/arrays
+    } else { // Assume JSON for other objects/arrays
         try {
             bodyToSend = JSON.stringify(options.body);
             if (!headers.has("Content-Type")) {
@@ -122,61 +106,45 @@ async function apiClient<T>(
 
   // --- Fetch Configuration ---
   const config: RequestInit = {
-    ...options, // Spread other fetch options (signal, keepalive, etc.)
+    ...options,
     method: options.method?.toUpperCase() || (bodyToSend ? 'POST' : 'GET'),
     headers: headers,
     body: bodyToSend,
-    // Sensible default: 'no-store' to prevent browser/intermediate caching of API calls.
-    // Can be overridden by caller if caching is desired (e.g., for public, immutable data).
     cache: options.cache ?? 'no-store',
-    // Include credentials (cookies) by default. Necessary for session-based auth.
-    // Requires proper CORS configuration on the backend if making cross-origin requests.
-    credentials: options.credentials ?? 'include',
+    credentials: options.credentials ?? 'include', // Send cookies by default
   };
 
   // --- Execute Fetch ---
   let response: Response;
   try {
-    // console.log(`API Client Request: ${config.method} ${url}`, { bodyProvided: !!config.body }); // Reduce logging noise
+    // console.log(`API Client Request: ${config.method} ${url}`); // Reduce logging verbosity
     response = await fetch(url, config);
-    // console.log(`API Client Response: ${response.status} ${response.statusText} for ${config.method} ${url}`);
   } catch (networkError: any) {
     console.error(`API Client Network Error: ${config.method} ${url}`, networkError);
     throw new APIError(
       `Network request failed: ${networkError?.message || 'Check connection or CORS policy.'}`,
-      0, // Status 0 for network errors
-      "NETWORK_ERROR",
-      undefined,
-      networkError
+      0, "NETWORK_ERROR", undefined, networkError
     );
   }
 
   // --- Process Response ---
   const requestId = response.headers.get("X-Request-ID") ?? undefined;
 
-  // Handle successful No Content response
   if (response.status === 204) {
-    return undefined as T;
+    return undefined as T; // Handle No Content
   }
 
-  // Attempt to read response body (only once)
   let responseText: string | null = null;
   try {
       responseText = await response.text();
   } catch (readError: any) {
       console.warn(`API Client: Failed to read response body for ${url} (status: ${response.status})`, readError);
-      // If reading fails, we can't parse JSON or get error details from body
       if (!response.ok) {
-          // Throw APIError for the failed status code, noting body read error
           throw new APIError(
-              `API request failed with status ${response.status} and response body could not be read.`,
-              response.status,
-              `HTTP_${response.status}`,
-              requestId,
-              { bodyReadError: readError.message }
+              `API request failed (${response.status}) and response body could not be read.`,
+              response.status, `HTTP_${response.status}`, requestId, { bodyReadError: readError.message }
           );
       } else {
-           // Success status but failed to read body - unusual, treat as parse error
            throw new APIError(
               `API request succeeded (${response.status}) but failed to read response body.`,
               response.status, "READ_ERROR", requestId, { bodyReadError: readError.message }
@@ -184,55 +152,48 @@ async function apiClient<T>(
       }
   }
 
-  // Try to parse as JSON if Content-Type indicates it
-  let responseBody: any = responseText; // Default to text if not JSON or parsing fails
+  let responseBody: any = responseText; // Default to text
   let parseError: Error | null = null;
   const contentType = response.headers.get("Content-Type");
 
-  if (responseText && contentType && contentType.toLowerCase().includes("application/json")) {
+  if (responseText && contentType?.toLowerCase().includes("application/json")) {
     try {
       responseBody = JSON.parse(responseText);
     } catch (e: any) {
       parseError = e;
       console.warn(`API Client: Could not parse JSON response from ${url} (status: ${response.status}). Body: ${responseText.substring(0, 100)}...`, parseError);
-      // Keep responseBody as the original text for error reporting
     }
   }
 
-  // Check for non-2xx status codes AFTER attempting to parse
   if (!response.ok) {
     let message = `API request failed with status ${response.status}`;
     let code = `HTTP_${response.status}`;
-    let details: unknown = responseBody; // Use parsed body (or text) as details
+    let details: unknown = responseBody;
 
-    // If JSON error DTO was successfully parsed, use its fields
     if (!parseError && responseBody && typeof responseBody === 'object' && (responseBody as ErrorResponseDTO).code) {
         const errorDto = responseBody as ErrorResponseDTO;
-        message = errorDto.message || message; // Prefer backend message
-        code = errorDto.code; // Use backend code
-        details = errorDto; // Use the full DTO as details
+        message = errorDto.message || message;
+        code = errorDto.code;
+        details = errorDto;
     } else if (typeof responseBody === 'string' && responseBody) {
-       // Use text body as message if JSON parsing failed or wasn't JSON
-       message = responseBody.substring(0, 200); // Limit length
+       message = responseBody.substring(0, 200);
     }
 
-    console.error(`API Error: ${config.method} ${url} -> ${response.status} ${code} - ${message}`, { requestId, details: responseBody }); // Log full details
+    console.error(`API Error: ${config.method} ${url} -> ${response.status} ${code} - ${message}`, { requestId, details }); // Log full details
 
+    // Throw the APIError with extracted/constructed info
     throw new APIError(message, response.status, code, requestId, details);
   }
 
-  // Handle case where status is OK (2xx) but JSON parsing failed (unexpected)
   if (parseError) {
+    // Success status but failed to parse JSON body
     throw new APIError(
       `API request succeeded (${response.status}) but failed to parse expected JSON response.`,
-      response.status,
-      "PARSE_ERROR",
-      requestId,
+      response.status, "PARSE_ERROR", requestId,
       { parseErrorMessage: parseError.message, responseText: responseText?.substring(0, 500) }
     );
   }
 
-  // Successful response with parsed body (JSON or text)
   return responseBody as T;
 }
 
@@ -251,6 +212,5 @@ export const apiPut = <T>(endpoint: string, body?: any, options?: Omit<RequestOp
 export const apiPatch = <T>(endpoint: string, body?: any, options?: Omit<RequestOptions, 'method' | 'body'>) =>
     apiClient<T>(endpoint, { ...options, method: 'PATCH', body });
 
-// DELETE often returns 204 No Content, so default T to void
 export const apiDelete = <T = void>(endpoint: string, options?: Omit<RequestOptions, 'method' | 'body'>) =>
   apiClient<T>(endpoint, { ...options, method: 'DELETE' });

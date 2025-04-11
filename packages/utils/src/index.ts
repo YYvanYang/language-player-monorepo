@@ -3,10 +3,12 @@ import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
 
 // --- Constants ---
+// MOVED Pagination constants here
 export const DefaultLimit = 20; // Default items per page
 export const MaxLimit = 100; // Max items per page
 
 // --- Types ---
+// Moved PaginationParams here
 export interface PaginationParams {
     limit?: number;
     offset?: number;
@@ -38,7 +40,6 @@ export function formatDuration(ms: number | undefined | null): string {
   const minutesStr = minutes < 10 ? `0${minutes}` : `${minutes}`;
 
   if (hours > 0) {
-    // Don't pad hours with 0 unless it's always desired
     return `${hours}:${minutesStr}:${secondsStr}`;
   }
   return `${minutesStr}:${secondsStr}`;
@@ -48,41 +49,71 @@ export function formatDuration(ms: number | undefined | null): string {
  * Debounces a function.
  * @param func The function to debounce.
  * @param delay Delay in milliseconds.
- * @returns A debounced version of the function with a cancel method.
+ * @returns A debounced version of the function with a cancel and flush method.
  */
- export function debounce<T extends (...args: any[]) => void>(
-   func: T,
-   delay: number
- ): T & { cancel: () => void } {
-   let timeoutId: ReturnType<typeof setTimeout> | null = null;
+export function debounce<T extends (...args: any[]) => void>(
+    func: T,
+    delay: number
+): T & { cancel: () => void; flush: () => void } {
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    let lastArgs: Parameters<T> | null = null;
+    let lastThis: any = null;
+    let trailingCallScheduled = false;
 
-   const debounced = (...args: Parameters<T>) => {
-     if (timeoutId) {
-       clearTimeout(timeoutId);
-     }
-     timeoutId = setTimeout(() => {
-       func(...args);
-       timeoutId = null; // Clear after execution
-     }, delay);
-   };
+    const debounced = (...args: Parameters<T>) => {
+        lastArgs = args;
+        lastThis = this;
+        trailingCallScheduled = true; // Mark that a call is pending
 
-   const cancel = () => {
-     if (timeoutId) {
-       clearTimeout(timeoutId);
-       timeoutId = null;
-     }
-   };
+        if (timeoutId) {
+            clearTimeout(timeoutId);
+        }
 
-   // Attach the cancel method to the debounced function
-   (debounced as T & { cancel: () => void }).cancel = cancel;
+        timeoutId = setTimeout(() => {
+            if (trailingCallScheduled) {
+                func.apply(lastThis, lastArgs!); // Use apply to preserve context
+            }
+            timeoutId = null;
+            trailingCallScheduled = false;
+            lastArgs = null;
+            lastThis = null;
+        }, delay);
+    };
 
-   return debounced as T & { cancel: () => void };
- }
+    const cancel = () => {
+        if (timeoutId) {
+            clearTimeout(timeoutId);
+        }
+        timeoutId = null;
+        trailingCallScheduled = false;
+        lastArgs = null;
+        lastThis = null;
+    };
+
+    // Flush: Immediately call the function if there's a pending call
+    const flush = () => {
+        if (timeoutId) {
+            clearTimeout(timeoutId);
+        }
+        if (trailingCallScheduled) {
+            func.apply(lastThis, lastArgs!);
+        }
+        timeoutId = null;
+        trailingCallScheduled = false;
+        lastArgs = null;
+        lastThis = null;
+    };
+
+    (debounced as any).cancel = cancel;
+    (debounced as any).flush = flush;
+
+    return debounced as T & { cancel: () => void; flush: () => void };
+}
 
 
 /**
  * Builds a URL query string from a parameters object.
- * Handles arrays by repeating the key. Encodes keys/values. Skips null/undefined.
+ * Handles arrays by repeating the key. Encodes keys/values. Skips null/undefined/empty strings.
  * @param params - An object containing query parameters.
  * @returns A URL query string starting with '?' or an empty string.
  */
@@ -92,19 +123,31 @@ export function buildQueryString(params?: Record<string, any> | null): string {
     }
     const query = new URLSearchParams();
     Object.entries(params).forEach(([key, value]) => {
-      if (value === undefined || value === null || value === '') { // Skip empty strings too
-        return;
+      if (value === undefined || value === null || value === '') {
+        return; // Skip null, undefined, and empty strings
       }
       if (Array.isArray(value)) {
-        value.forEach((item) => { // Append each item for array values
-          if (item !== undefined && item !== null && item !== '') {
+        value.forEach((item) => {
+          if (item !== undefined && item !== null && item !== '') { // Also skip empty strings in arrays
             query.append(key, String(item));
           }
         });
       } else {
-        query.set(key, String(value)); // Set for non-array values
+        query.set(key, String(value));
       }
     });
     const queryString = query.toString();
     return queryString ? `?${queryString}` : '';
+}
+
+// Add useDebounce hook
+export function useDebounce<T>(value: T, delay: number): T {
+  const [debouncedValue, setDebouncedValue] = React.useState<T>(value);
+
+  React.useEffect(() => {
+    const timer = setTimeout(() => setDebouncedValue(value), delay || 500);
+    return () => clearTimeout(timer);
+  }, [value, delay]);
+
+  return debouncedValue;
 }

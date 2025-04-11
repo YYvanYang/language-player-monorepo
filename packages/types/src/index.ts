@@ -43,11 +43,12 @@ export interface LogoutRequestDTO {
   refreshToken: string;
 }
 
+// MODIFIED: Added 'user' field to match backend responses on login/register/callback
 export interface AuthResponseDTO {
   accessToken: string;
   refreshToken: string;
   isNewUser?: boolean; // Provided by Google callback response
-  user?: UserResponseDTO; // Often included on login/register success
+  user?: UserResponseDTO; // Included on login/register/callback success
 }
 
 // --- User DTOs ---
@@ -61,21 +62,30 @@ export interface UserResponseDTO {
   profileImageUrl?: string | null;
   createdAt: string; // ISO 8601 datetime string (e.g., "2023-10-27T10:00:00Z")
   updatedAt: string; // ISO 8601 datetime string
-  isAdmin?: boolean; // Important for Admin Panel checks
+  isAdmin?: boolean; // Important for Admin Panel checks, backend needs to include this for admin users
 }
 
-// --- Admin User DTOs (Example) ---
-// DTO for updating user info via admin panel
+// --- Admin User DTOs ---
+// NEW: Define DTO for updating user info via admin panel
 export interface AdminUpdateUserRequestDTO {
     name?: string;
     email?: string; // Be cautious allowing email updates
     isAdmin?: boolean;
-    // Add other fields like status (active/inactive), roles etc.
+    // Add other fields as needed, matching backend capabilities
     // status?: 'active' | 'inactive';
 }
+// NEW: Define DTO for creating user via admin panel (if needed)
+// export interface AdminCreateUserRequestDTO {
+//     email: string;
+//     name: string;
+//     isAdmin?: boolean;
+//     // initialPassword?: string; // If admin sets initial password
+// }
+
 
 // --- Audio Track DTOs ---
-export type AudioLevel = "A1" | "A2" | "B1" | "B2" | "C1" | "C2" | "NATIVE" | ""; // Allow empty string for 'unknown/any'
+// MODIFIED: Allow empty string for level filter/response consistency
+export type AudioLevel = "A1" | "A2" | "B1" | "B2" | "C1" | "C2" | "NATIVE" | "";
 
 // Basic track info returned in lists
 export interface AudioTrackResponseDTO {
@@ -87,6 +97,7 @@ export interface AudioTrackResponseDTO {
   durationMs: number; // Always in milliseconds
   coverImageUrl?: string | null;
   uploaderId?: string | null; // UUID string
+  uploaderName?: string | null; // ADDED: Optional uploader name if backend provides it
   isPublic: boolean;
   tags?: string[] | null;
   createdAt: string; // ISO 8601 datetime string
@@ -129,7 +140,7 @@ export interface AudioCollectionResponseDTO {
   updatedAt: string; // ISO 8601 string
   // Tracks might be included in detail view, optional in lists
   tracks?: AudioTrackResponseDTO[] | null;
-  // trackCount?: number; // Optional: If backend provides count separately
+  trackCount?: number; // ADDED: Optional track count
 }
 
 // --- User Activity DTOs ---
@@ -171,18 +182,21 @@ export interface RequestUploadResponseDTO {
     objectKey: string;
 }
 
-// DTO for POST /audio/tracks (matches port.CompleteUploadInput structure)
+// DTO for POST /audio/tracks and Admin PUT /admin/audio/tracks/{id} body
+// Corresponds to port.CompleteUploadInput + partial updates
+// Renamed for clarity, matches structure used by backend handlers now
 export interface CompleteUploadRequestDTO {
-    objectKey: string;
-    title: string;
+    objectKey?: string; // Required only for POST /audio/tracks
+    title?: string;
     description?: string | null;
-    languageCode: string;
+    languageCode?: string;
     level?: AudioLevel | null;
-    durationMs: number; // Milliseconds
-    isPublic?: boolean | null; // Backend likely defaults this
+    durationMs?: number; // Required only for POST /audio/tracks
+    isPublic?: boolean | null;
     tags?: string[] | null;
     coverImageUrl?: string | null;
 }
+
 
 // DTO for POST /uploads/audio/batch/request (matches port.BatchRequestUploadInput)
 export interface BatchRequestUploadInputItemDTO {
@@ -204,20 +218,22 @@ export interface BatchRequestUploadInputResponseDTO {
     results: BatchRequestUploadInputResponseItemDTO[];
 }
 
-// DTO for POST /audio/tracks/batch/complete (matches port.BatchCompleteInput structure)
+// DTO for POST /audio/tracks/batch/complete items (matches port.BatchCompleteItem structure)
+// Renamed for clarity to match frontend usage.
 export interface BatchCompleteUploadItemDTO {
-    objectKey: string;
-    title: string;
+    objectKey: string; // Required
+    title: string; // Required
     description?: string | null;
-    languageCode: string;
+    languageCode: string; // Required
     level?: AudioLevel | null;
-    durationMs: number; // Milliseconds
+    durationMs: number; // Required
     isPublic?: boolean | null;
     tags?: string[] | null;
     coverImageUrl?: string | null;
 }
+// DTO for POST /audio/tracks/batch/complete (matches port.BatchCompleteInput)
 export interface BatchCompleteUploadInputDTO {
-    tracks: BatchCompleteUploadItemDTO[];
+    tracks: BatchCompleteUploadItemDTO[]; // List of items to process
 }
 
 // DTO for response of /audio/tracks/batch/complete (matches port.BatchCompleteResultItem structure)
@@ -241,13 +257,15 @@ export interface PaginationParams {
 }
 
 // Params for GET /audio/tracks
+// MODIFIED: Changed lang -> languageCode, added uploaderId
 export interface ListTrackQueryParams extends PaginationParams {
   q?: string; // General search
-  lang?: string; // Language code filter
-  level?: AudioLevel; // Level filter
-  isPublic?: boolean; // Public status filter
-  tags?: string[]; // Tag filter (array)
-  sortBy?: 'createdAt' | 'title' | 'durationMs' | 'level'; // Allowed sort fields
+  languageCode?: string; // Use full name consistent with backend DTOs
+  level?: AudioLevel;
+  isPublic?: boolean;
+  tags?: string[];
+  uploaderId?: string; // Filter by uploader UUID
+  sortBy?: 'createdAt' | 'title' | 'durationMs' | 'level' | 'languageCode'; // Ensure these match backend capabilities
   sortDir?: 'asc' | 'desc';
 }
 
