@@ -1,208 +1,205 @@
 // apps/user-app/_components/collection/CollectionTrackList.tsx
 'use client';
 
-import React, { useState, useTransition } from 'react';
+import React, { useState, useEffect, useTransition } from 'react';
 import type { AudioTrackResponseDTO } from '@repo/types';
-import { PlayTrackButton } from '@/../_components/track/PlayTrackButton'; // Adjust alias
-import { Button } from '@repo/ui'; // Adjust alias
-import { X, GripVertical, Loader } from 'lucide-react';
+import { PlayTrackButton } from '@/../_components/track/PlayTrackButton';
+import { Button } from '@repo/ui';
+import { X, GripVertical, Loader, AlertTriangle } from 'lucide-react';
+import { updateCollectionTracksAction } from '@/../_actions/collectionActions';
+import { useQueryClient } from '@tanstack/react-query';
+import { cn } from '@repo/utils';
 import {
-    updateCollectionTracksAction
-} from '@/../_actions/collectionActions'; // Adjust alias
-import { useQueryClient } from '@tanstack/react-query'; // For invalidation
-import { cn } from '@repo/utils'; // Adjust alias
-
-// --- Drag-and-Drop Setup (Conceptual using dnd-kit) ---
-// Install: pnpm add @dnd-kit/core @dnd-kit/sortable @dnd-kit/utilities --filter user-app
-// Uncomment imports and code blocks below if implementing dnd-kit
-// import {
-//   DndContext,
-//   closestCenter,
-//   KeyboardSensor,
-//   PointerSensor,
-//   useSensor,
-//   useSensors,
-//   DragEndEvent,
-// } from '@dnd-kit/core';
-// import {
-//   arrayMove,
-//   SortableContext,
-//   sortableKeyboardCoordinates,
-//   useSortable,
-//   verticalListSortingStrategy,
-// } from '@dnd-kit/sortable';
-// import { CSS } from '@dnd-kit/utilities';
-// --- End Drag-and-Drop Setup ---
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
 interface CollectionTrackListProps {
     initialTracks: AudioTrackResponseDTO[];
     collectionId: string;
-    isOwner: boolean; // Control whether edit controls (remove/reorder) are shown
+    isOwner: boolean; // Determines if edit controls are shown
 }
 
-// --- Sortable Item Component (for Drag-and-Drop) ---
+// --- Sortable Item Component ---
 interface SortableTrackItemProps {
     track: AudioTrackResponseDTO;
     isOwner: boolean;
     onRemove: (trackId: string) => void;
-    isDeleting: boolean;
+    isProcessing: boolean; // General processing state for this item
 }
 
-function SortableTrackItem({ track, isOwner, onRemove, isDeleting }: SortableTrackItemProps) {
-    // --- dnd-kit Hook (Uncomment if implementing) ---
-    // const {
-    //     attributes,
-    //     listeners,
-    //     setNodeRef,
-    //     transform,
-    //     transition,
-    //     isDragging, // Can use this for styling while dragging
-    // } = useSortable({ id: track.id });
+function SortableTrackItem({ track, isOwner, onRemove, isProcessing }: SortableTrackItemProps) {
+    const {
+        attributes,
+        listeners,
+        setNodeRef,
+        transform,
+        transition,
+        isDragging,
+    } = useSortable({ id: track.id, disabled: !isOwner }); // Disable sorting if not owner
 
-    // const style = {
-    //     transform: CSS.Transform.toString(transform),
-    //     transition,
-    //     opacity: isDragging ? 0.5 : 1, // Example dragging style
-    //     zIndex: isDragging ? 10 : undefined,
-    //     cursor: isOwner ? 'grab' : 'default',
-    // };
-    // --- End dnd-kit Hook ---
+    const style = {
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.5 : 1,
+        zIndex: isDragging ? 10 : undefined,
+        cursor: isOwner ? (isDragging ? 'grabbing' : 'grab') : 'default',
+    };
 
-    // --- Render Logic (using style and attributes/listeners from dnd-kit if active) ---
     return (
         <div
-            // ref={setNodeRef} // dnd-kit: Assign ref
-            // style={style} // dnd-kit: Apply transform/transition styles
-            className="flex items-center justify-between p-2 border rounded bg-white shadow-sm mb-2"
+            ref={setNodeRef}
+            style={style}
+            className={cn(
+                "flex items-center justify-between p-2 border rounded bg-white dark:bg-slate-900 dark:border-slate-700 shadow-sm mb-2",
+                isDragging && "shadow-lg ring-2 ring-blue-500",
+                isProcessing && "opacity-50 pointer-events-none"
+            )}
+            {...attributes} // Add attributes here for the whole item if handle is not separate
         >
-            <div className="flex items-center gap-3 flex-grow min-w-0">
-                 {isOwner && (
+            <div className="flex items-center gap-2 md:gap-3 flex-grow min-w-0">
+                {isOwner && (
                     <button
-                        // {...attributes} // dnd-kit: Spread attributes
-                        // {...listeners} // dnd-kit: Spread listeners for drag handle
+                        {...listeners} // Drag handle listeners
                         aria-label={`Drag to reorder ${track.title}`}
                         title="Drag to reorder"
-                        className="cursor-grab touch-none p-1 text-gray-400 hover:text-gray-700"
+                        className="cursor-grab touch-none p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-400 rounded"
+                        disabled={isProcessing} // Disable while processing
                     >
                         <GripVertical className="h-5 w-5" />
                     </button>
-                 )}
+                )}
                 <div className="truncate flex-grow">
                     <p className="text-sm font-medium truncate">{track.title}</p>
-                    <p className="text-xs text-gray-500 truncate">{track.languageCode} {track.level && `(${track.level})`}</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{track.languageCode} {track.level && `(${track.level})`}</p>
                 </div>
             </div>
             <div className="flex items-center flex-shrink-0 gap-1 ml-2">
                 <PlayTrackButton trackId={track.id} trackTitle={track.title} />
-                 {isOwner && (
-                     <Button
+                {isOwner && (
+                    <Button
                         variant="ghost"
                         size="icon"
-                        className="text-red-500 hover:text-red-700 hover:bg-red-50 w-8 h-8" // Make slightly smaller
+                        className="text-red-500 hover:text-red-700 hover:bg-red-100 dark:hover:bg-red-900/20 w-7 h-7" // Smaller icon button
                         onClick={() => onRemove(track.id)}
-                        disabled={isDeleting}
+                        disabled={isProcessing}
                         title={`Remove ${track.title} from collection`}
                         aria-label={`Remove ${track.title}`}
                     >
-                         {isDeleting ? <Loader className="h-4 w-4 animate-spin"/> : <X className="h-4 w-4" />}
+                        {isProcessing ? <Loader className="h-4 w-4 animate-spin"/> : <X className="h-4 w-4" />}
                     </Button>
-                 )}
+                )}
             </div>
         </div>
     );
 }
-// --- End Sortable Item Component ---
 
-
+// --- Main List Component ---
 export function CollectionTrackList({ initialTracks, collectionId, isOwner }: CollectionTrackListProps) {
-    const [tracks, setTracks] = useState(initialTracks); // Local state for optimistic updates/reordering
-    const [isPending, startTransition] = useTransition();
-    const [deletingTrackId, setDeletingTrackId] = useState<string | null>(null);
+    const [tracks, setTracks] = useState(initialTracks);
+    const [isSaving, startTransition] = useTransition();
+    const [error, setError] = useState<string | null>(null);
+    const [processingTrackId, setProcessingTrackId] = useState<string | null>(null); // For remove loading state
     const queryClient = useQueryClient();
 
-    // Update local state if initialTracks prop changes (e.g., after parent revalidation)
+    // Sync local state if initialTracks prop changes externally
     useEffect(() => {
         setTracks(initialTracks);
     }, [initialTracks]);
 
-    // --- Drag-and-Drop Sensors (Uncomment if implementing) ---
-    // const sensors = useSensors(
-    //     useSensor(PointerSensor),
-    //     useSensor(KeyboardSensor, {
-    //         coordinateGetter: sortableKeyboardCoordinates,
-    //     })
-    // );
-    // --- End Drag-and-Drop Sensors ---
+    const sensors = useSensors(
+        useSensor(PointerSensor),
+        useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+    );
 
-    // --- Drag-and-Drop End Handler (Uncomment and implement if implementing) ---
-    // function handleDragEnd(event: DragEndEvent) {
-    //     const { active, over } = event;
-    //     if (over && active.id !== over.id) {
-    //         setTracks((currentTracks) => {
-    //             const oldIndex = currentTracks.findIndex((t) => t.id === active.id);
-    //             const newIndex = currentTracks.findIndex((t) => t.id === over.id);
-    //             const reorderedTracks = arrayMove(currentTracks, oldIndex, newIndex);
+    // --- Server Action Call ---
+    const saveTrackOrder = (newOrderedTracks: AudioTrackResponseDTO[]) => {
+        if (!isOwner) return; // Should not happen if controls are hidden
 
-    //             // Optimistic UI update done via setTracks
-    //             // Call server action in background
-    //             startTransition(async () => {
-    //                 const orderedIds = reorderedTracks.map(t => t.id);
-    //                 const result = await updateCollectionTracksAction(collectionId, { orderedTrackIds: orderedIds });
-    //                 if (!result.success) {
-    //                     console.error("Failed to save track order:", result.message);
-    //                     // Revert optimistic update on failure
-    //                     setTracks(currentTracks); // Revert to original order before move
-    //                     // Show error notification
-    //                 } else {
-    //                     // Optional: Invalidate query cache to ensure consistency, though revalidateTag in action helps
-    //                     queryClient.invalidateQueries({ queryKey: ['collection', collectionId] });
-    //                 }
-    //             });
+        const orderedIds = newOrderedTracks.map(t => t.id);
+        setError(null); // Clear previous errors
 
-    //             return reorderedTracks; // Return reordered list for immediate UI update
-    //         });
-    //     }
-    // }
-    // --- End Drag-and-Drop End Handler ---
+        startTransition(async () => {
+            const result = await updateCollectionTracksAction(collectionId, { orderedTrackIds: orderedIds });
+            if (!result.success) {
+                console.error("Failed to update track order:", result.message);
+                setError(result.message || "Failed to save track order.");
+                setTracks(initialTracks); // Revert optimistic update on error
+                // Show error toast
+            } else {
+                console.log("Track order saved successfully.");
+                // Invalidate query to ensure consistency, although action revalidates tag
+                queryClient.invalidateQueries({ queryKey: ['collection', collectionId] });
+                 queryClient.invalidateQueries({ queryKey: ['collectionTracks', collectionId] });
+                // Update initialTracks locally to prevent reverting on next prop change?
+                // Maybe not needed if parent revalidates correctly via tags.
+                // Show success toast?
+            }
+            setProcessingTrackId(null); // Clear specific processing state if any
+        });
+    };
+
+    // --- Drag End Handler ---
+    function handleDragEnd(event: DragEndEvent) {
+        const { active, over } = event;
+        if (!over || active.id === over.id) return; // No change or invalid drop
+
+        const oldIndex = tracks.findIndex((t) => t.id === active.id);
+        const newIndex = tracks.findIndex((t) => t.id === over.id);
+
+        if (oldIndex === -1 || newIndex === -1) return; // Should not happen
+
+        const reorderedTracks = arrayMove(tracks, oldIndex, newIndex);
+        setTracks(reorderedTracks); // Optimistic UI update
+        saveTrackOrder(reorderedTracks); // Save new order via server action
+    }
 
     // --- Remove Handler ---
     const handleRemoveTrack = (trackIdToRemove: string) => {
-        if (isPending) return; // Prevent multiple actions
+        if (isSaving) return; // Prevent action while already saving
+
+        const trackToRemove = tracks.find(t => t.id === trackIdToRemove);
+         if (!window.confirm(`Remove "${trackToRemove?.title ?? 'this track'}" from the collection?`)) {
+             return;
+         }
 
         const currentTracks = tracks; // Keep current state for potential revert
         const filteredTracks = tracks.filter(track => track.id !== trackIdToRemove);
-        const orderedIds = filteredTracks.map(t => t.id);
 
-        // Optimistic UI Update
-        setTracks(filteredTracks);
-        setDeletingTrackId(trackIdToRemove); // Show loader on the specific item being removed
-
-        startTransition(async () => {
-             const result = await updateCollectionTracksAction(collectionId, { orderedTrackIds: orderedIds });
-             if (!result.success) {
-                 console.error("Failed to remove track:", result.message);
-                 // Revert optimistic update
-                 setTracks(currentTracks);
-                 // Show error notification
-             } else {
-                 // Optional: Invalidate query cache
-                 queryClient.invalidateQueries({ queryKey: ['collection', collectionId] });
-             }
-             setDeletingTrackId(null); // Stop showing loader
-        });
+        setProcessingTrackId(trackIdToRemove); // Set loading state for the specific item
+        setTracks(filteredTracks); // Optimistic UI Update
+        saveTrackOrder(filteredTracks); // Save new order (which excludes the track)
     };
-    // --- End Remove Handler ---
 
-
-    if (!tracks || tracks.length === 0) {
-        return <p className="text-center text-gray-500 py-4">No tracks in this collection yet.</p>;
+    if (!tracks) {
+       return <div className="p-4 text-center text-slate-500">Loading tracks...</div> // Handle loading state if needed
+    }
+    if (tracks.length === 0) {
+        return <p className="text-center text-slate-500 dark:text-slate-400 py-4">No tracks in this collection yet.</p>;
     }
 
-    // --- Render Logic ---
     return (
-        <div>
-            {/* --- dnd-kit Context (Uncomment if implementing) --- */}
-            {/* <DndContext
+        <div className="space-y-2">
+            {error && (
+                <div className="mb-4 p-3 border border-red-400 bg-red-100 text-red-700 rounded-md flex items-center justify-between">
+                    <span><AlertTriangle className="inline h-4 w-4 mr-2"/> {error}</span>
+                    <Button variant="ghost" size="sm" onClick={() => setError(null)}><X size={16}/></Button>
+                </div>
+            )}
+            <DndContext
                 sensors={sensors}
                 collisionDetection={closestCenter}
                 onDragEnd={handleDragEnd}
@@ -210,32 +207,24 @@ export function CollectionTrackList({ initialTracks, collectionId, isOwner }: Co
                 <SortableContext
                     items={tracks.map(t => t.id)}
                     strategy={verticalListSortingStrategy}
-                > */}
-                    {/* Map over tracks */}
+                    disabled={!isOwner} // Disable context if not owner
+                >
                     {tracks.map((track) => (
-                         // Use SortableTrackItem component here
-                         <SortableTrackItem
+                        <SortableTrackItem
                             key={track.id}
                             track={track}
                             isOwner={isOwner}
                             onRemove={handleRemoveTrack}
-                            isDeleting={isPending && deletingTrackId === track.id}
+                            isProcessing={isSaving && processingTrackId === track.id} // Pass processing state for specific item
                         />
-                         // Replace above with below if NOT using drag-and-drop initially:
-                        // <TrackItem key={track.id} track={track} isOwner={isOwner} onRemove={handleRemoveTrack} isDeleting={isPending && deletingTrackId === track.id} />
                     ))}
-                 {/* </SortableContext>
-            </DndContext> */}
-            {/* --- End dnd-kit Context --- */}
+                </SortableContext>
+            </DndContext>
+             {isSaving && !processingTrackId && ( // General saving indicator if not removing specific track
+                <div className="flex items-center justify-center text-sm text-slate-500 mt-2">
+                    <Loader className="h-4 w-4 animate-spin mr-2" /> Saving changes...
+                </div>
+             )}
         </div>
     );
 }
-
-// Basic TrackItem if not using dnd-kit (Duplicate of SortableTrackItem's render logic without dnd props)
-// function TrackItem({ track, isOwner, onRemove, isDeleting }: SortableTrackItemProps) {
-//      return (
-//         <div className="flex items-center justify-between p-2 border rounded bg-white shadow-sm mb-2">
-//            {/* ... Content identical to SortableTrackItem's return ... */}
-//         </div>
-//     );
-// }
