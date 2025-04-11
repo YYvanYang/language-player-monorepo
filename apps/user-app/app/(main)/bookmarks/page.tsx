@@ -10,6 +10,7 @@ import { PaginationControls } from '@/_components/ui/PaginationControls';
 import { usePlayerStore } from '@/_stores/playerStore';
 import { Loader, BookmarkX } from 'lucide-react';
 import { DefaultLimit } from '@/pkg/pagination/pagination';
+import Link from 'next/link';
 
 // Separate component to handle logic dependent on searchParams
 function BookmarksPageContent() {
@@ -56,7 +57,7 @@ function BookmarksPageContent() {
             {totalBookmarks === 0 && !isFetching ? (
                 <div className="text-center py-10 text-slate-500">
                     <BookmarkX className="mx-auto h-12 w-12 text-slate-400 mb-2"/>
-                    You haven't added any bookmarks yet.
+                    You haven&apos;t added any bookmarks yet.
                 </div>
             ) : (
                 <BookmarkList

@@ -1,1 +1,1 @@
-export const placeholderAuth = 'auth';
+export * from './session';
