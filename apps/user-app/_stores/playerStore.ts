@@ -4,53 +4,44 @@ import { immer } from 'zustand/middleware/immer';
 import type { AudioTrackDetailsResponseDTO } from '@repo/types';
 import { AUDIO_DURATION_THRESHOLD_MS, PlaybackState } from '@/../_lib/constants';
 import { getTrackDetails } from '@/../_services/trackService';
-import { formatDuration, debounce } from '@repo/utils'; // Import debounce
-import { recordProgressAction } from '@/../_actions/userActivityActions'; // Import the action
+import { debounce } from '@repo/utils';
+import { recordProgressAction } from '@/../_actions/userActivityActions';
 
-// Debounce the progress recording function (e.g., update every 5 seconds)
+// Debounce progress recording (5 seconds)
 const debouncedRecordProgress = debounce((trackId: string, progressMs: number) => {
     if (trackId && progressMs > 0) {
-        console.log(`Debounced: Recording progress ${progressMs}ms for track ${trackId}`);
-        recordProgressAction(trackId, progressMs)
-            .then(result => {
-                if (!result.success) {
-                    console.warn("Failed to record progress via action:", result.message);
-                }
-            })
-            .catch(err => {
-                 console.error("Error calling recordProgressAction:", err);
-            });
+        // console.log(`Debounced: Recording progress ${Math.round(progressMs)}ms for track ${trackId}`);
+        recordProgressAction(trackId, Math.round(progressMs)) // Ensure integer ms
+            .then(result => { if (!result.success) console.warn("Failed to record progress via action:", result.message); })
+            .catch(err => { console.error("Error calling recordProgressAction:", err); });
     }
-}, 5000); // 5 seconds delay
+}, 5000);
 
 // --- State Interface ---
 interface PlayerState {
   playbackState: PlaybackState;
   currentTrackDetails: AudioTrackDetailsResponseDTO | null;
-  isStreamingMode: boolean; // True if using <audio> element
+  isStreamingMode: boolean;
   duration: number; // seconds
   currentTime: number; // seconds
-  bufferedTime: number; // seconds (for streaming)
-  volume: number; // 0.0 to 1.0
+  bufferedTime: number; // seconds
+  volume: number;
   isMuted: boolean;
   isLoading: boolean;
   error: string | null;
-
-  // Internal WAAPI/HTML references (not directly exposed typically)
-  // These are managed internally by actions
   _audioContext: AudioContext | null;
   _gainNode: GainNode | null;
-  _audioBuffer: AudioBuffer | null; // For WAAPI mode
-  _sourceNode: AudioBufferSourceNode | MediaElementAudioSourceNode | null; // Can be either type
-  _htmlAudioElement: HTMLAudioElement | null; // Ref to hidden <audio>
-  _playbackStartTime: number; // AudioContext time when playback started (WAAPI)
-  _playbackStartOffset: number; // Offset within buffer where playback started (WAAPI)
-  _animationFrameId: number | null; // For WAAPI time updates
+  _audioBuffer: AudioBuffer | null;
+  _sourceNode: AudioBufferSourceNode | MediaElementAudioSourceNode | null;
+  _htmlAudioElement: HTMLAudioElement | null;
+  _playbackStartTime: number;
+  _playbackStartOffset: number;
+  _animationFrameId: number | null;
+  _currentTrackIdLoading: string | null; // Track which track ID is currently being loaded
 }
 
 // --- Actions Interface ---
 interface PlayerActions {
-  // Core Controls
   loadAndPlayTrack: (trackId: string) => Promise<void>;
   play: () => void;
   pause: () => void;
@@ -58,10 +49,8 @@ interface PlayerActions {
   seek: (timeSeconds: number) => void;
   setVolume: (volume: number) => void;
   toggleMute: () => void;
-  stop: () => void; // Stops playback and unloads track
-  cleanup: () => void; // Clean up resources on unmount
-
-  // Internal / Setup
+  stop: () => void;
+  cleanup: () => void;
   _setHtmlAudioElementRef: (element: HTMLAudioElement | null) => void;
   _initAudioContext: () => AudioContext;
 }
@@ -74,10 +63,11 @@ const initialState: Omit<PlayerState, '_audioContext' | '_gainNode' | '_audioBuf
   duration: 0,
   currentTime: 0,
   bufferedTime: 0,
-  volume: 0.8, // Default volume
+  volume: 0.8,
   isMuted: false,
   isLoading: false,
   error: null,
+  _currentTrackIdLoading: null,
 };
 
 // --- Store Implementation ---
@@ -85,74 +75,101 @@ export const usePlayerStore = create(
   immer<PlayerState & PlayerActions>((set, get) => {
 
     // --- Internal Helper Functions ---
-    const setError = (message: string) => {
-      console.error("Player Error:", message);
+    const setError = (message: string, trackId?: string) => {
+      console.error("Player Error:", message, trackId ? `(Track: ${trackId})` : '');
       set((state) => {
-        state.playbackState = PlaybackState.ERROR;
-        state.error = message;
-        state.isLoading = false;
-        internalStop(state); // Stop playback on error
+        // Only set error if it pertains to the track currently being loaded/played
+        if (!trackId || state._currentTrackIdLoading === trackId || state.currentTrackDetails?.id === trackId) {
+            state.playbackState = PlaybackState.ERROR;
+            state.error = message;
+            state.isLoading = false;
+            state._currentTrackIdLoading = null;
+            internalStop(state);
+        }
       });
     };
 
     const initAudioContextIfNeeded = (): AudioContext => {
-       let ctx = get()._audioContext;
-       if (!ctx) {
+        let state = get();
+        if (!state._audioContext || state._audioContext.state === 'closed') {
             console.log("Initializing AudioContext");
-            ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+            const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
             const gainNode = ctx.createGain();
             gainNode.connect(ctx.destination);
-            set(state => {
-                state._audioContext = ctx;
-                state._gainNode = gainNode;
-                state._updateVolumeGain(); // Apply initial volume
-            });
-       }
-       return ctx;
+            // Use set directly here, as we're outside the main immer wrapper temporarily
+            set({ _audioContext: ctx, _gainNode: gainNode });
+            // Manually apply volume AFTER setting the state
+            const updatedState = get();
+            if (updatedState._gainNode) {
+                updatedState._gainNode.gain.setValueAtTime(updatedState.isMuted ? 0 : updatedState.volume, ctx.currentTime);
+            }
+             // Resume context if needed (might start suspended)
+             if (ctx.state === 'suspended') {
+                ctx.resume().catch(e => console.warn("Could not resume initial AudioContext:", e));
+             }
+            return ctx;
+        }
+        // Resume context if suspended but not closed
+        if(state._audioContext.state === 'suspended') {
+             state._audioContext.resume().catch(e => console.warn("Could not resume existing AudioContext:", e));
+        }
+        return state._audioContext;
     };
 
-     const updateTimeWAAPI = () => {
-        const state = get();
-        if (state.playbackState !== PlaybackState.PLAYING || !state._audioContext || state.isStreamingMode) {
-            if (state._animationFrameId) cancelAnimationFrame(state._animationFrameId);
-            set(draft => { draft._animationFrameId = null; });
-            return;
-        }
-        const elapsed = state._audioContext.currentTime - state._playbackStartTime;
-        const newTime = state._playbackStartOffset + elapsed;
-        set(draft => {
-            draft.currentTime = Math.min(newTime, draft.duration);
-            if (draft.currentTime >= draft.duration) {
-                draft.playbackState = PlaybackState.ENDED;
-                internalStop(draft);
-                // Record final progress when ended
-                if (state.currentTrackDetails?.id) {
-                    debouncedRecordProgress(state.currentTrackDetails.id, Math.floor(state.duration * 1000));
-                }
-            } else {
-                draft._animationFrameId = requestAnimationFrame(updateTimeWAAPI);
-                // --- Record progress periodically ---
-                if (state.currentTrackDetails?.id) {
-                    debouncedRecordProgress(state.currentTrackDetails.id, Math.floor(draft.currentTime * 1000));
-                }
-                // --- End Record progress ---
+
+    const updateTimeWAAPI = () => {
+      const state = get();
+      if (state.playbackState !== PlaybackState.PLAYING || !state._audioContext || state.isStreamingMode) {
+        if (state._animationFrameId) cancelAnimationFrame(state._animationFrameId);
+        set(draft => { draft._animationFrameId = null; });
+        return;
+      }
+
+      const elapsed = state._audioContext.currentTime - state._playbackStartTime;
+      const newTime = Math.max(0, state._playbackStartOffset + elapsed); // Ensure time doesn't go negative
+      const newCurrentTime = Math.min(newTime, state.duration); // Clamp to duration
+
+      // Only update state if time actually changed significantly (avoid excessive updates)
+      if (Math.abs(newCurrentTime - state.currentTime) > 0.05) { // ~50ms threshold
+          set(draft => {
+            draft.currentTime = newCurrentTime;
+            // Record progress periodically
+            if (draft.currentTrackDetails?.id) {
+                debouncedRecordProgress(draft.currentTrackDetails.id, Math.floor(draft.currentTime * 1000));
             }
+          });
+      }
+
+      if (newCurrentTime >= state.duration) {
+        // End of track reached
+        set(draft => {
+            draft.playbackState = PlaybackState.ENDED;
+            draft.currentTime = draft.duration; // Ensure final time is exactly duration
+             // Record final progress
+             if (draft.currentTrackDetails?.id) {
+                 debouncedRecordProgress(draft.currentTrackDetails.id, Math.floor(draft.duration * 1000));
+             }
         });
+        internalStop(get()); // Cleanup after state update
+      } else {
+        // Continue animation loop
+        set(draft => { draft._animationFrameId = requestAnimationFrame(updateTimeWAAPI); });
+      }
     };
+
 
     const internalStop = (state: PlayerState) => {
-        console.log("Internal Stop Called. Streaming:", state.isStreamingMode, "State:", state.playbackState);
+        // console.log("Internal Stop Called. Streaming:", state.isStreamingMode, "State:", state.playbackState);
         if (state._animationFrameId) {
             cancelAnimationFrame(state._animationFrameId);
             state._animationFrameId = null;
         }
         if (state._sourceNode) {
             try {
-                if (state.isStreamingMode && state._htmlAudioElement) {
-                   state._htmlAudioElement.pause(); // Pause element
-                   // Detach? Maybe not needed if element persists
+                if (state.isStreamingMode && state._htmlAudioElement && !state._htmlAudioElement.paused) {
+                   state._htmlAudioElement.pause();
                 } else if (!state.isStreamingMode && state._sourceNode instanceof AudioBufferSourceNode) {
-                    state._sourceNode.stop(); // Stop WAAPI source
+                    state._sourceNode.stop();
                     state._sourceNode.disconnect();
                 }
             } catch (e) { console.warn("Error stopping/disconnecting source node:", e); }
@@ -160,18 +177,75 @@ export const usePlayerStore = create(
         }
          state._playbackStartTime = 0;
          state._playbackStartOffset = 0;
-         // Don't reset currentTrackDetails or duration here, only on explicit stop() action
-         // Update playback state if not already ERROR or ENDED
-         if (state.playbackState !== PlaybackState.ERROR && state.playbackState !== PlaybackState.ENDED) {
-             state.playbackState = PlaybackState.READY; // Ready to play again from currentTime
-             // Or should it be IDLE? READY seems better if seeking is possible.
-             // If stop() action called, it might reset further.
+    };
+
+    const applyVolumeAndMute = (state: PlayerState) => {
+         if (state._gainNode) {
+             state._gainNode.gain.setValueAtTime(state.isMuted ? 0 : state.volume, state._audioContext?.currentTime ?? 0);
+         }
+         if (state._htmlAudioElement) {
+            state._htmlAudioElement.volume = state.isMuted ? 0 : state.volume;
+            state._htmlAudioElement.muted = state.isMuted;
          }
     };
+
+    // HTML Audio Element Listeners (defined once)
+    const setupAudioElementListeners = (element: HTMLAudioElement) => {
+        element.onplay = () => set(s => { if (s.isStreamingMode && s.playbackState !== PlaybackState.PLAYING) { s.playbackState = PlaybackState.PLAYING; s.isLoading = false; s._currentTrackIdLoading = null;} });
+        element.onpause = () => set(s => { if (s.isStreamingMode && s.playbackState !== PlaybackState.ENDED && s.playbackState !== PlaybackState.IDLE && s.playbackState !== PlaybackState.ERROR) s.playbackState = PlaybackState.PAUSED; });
+        element.onended = () => {
+            set(s => {
+               if(s.isStreamingMode) {
+                   s.playbackState = PlaybackState.ENDED;
+                   s.currentTime = s.duration; // Ensure time is set to end
+                   if (s.currentTrackDetails?.id) {
+                       debouncedRecordProgress(s.currentTrackDetails.id, Math.floor(s.duration * 1000));
+                   }
+               }
+            });
+            internalStop(get());
+        };
+        element.onwaiting = () => set(s => { if(s.isStreamingMode) s.playbackState = PlaybackState.BUFFERING; });
+        element.onplaying = () => set(s => { if(s.isStreamingMode) s.playbackState = PlaybackState.PLAYING; s.isLoading = false; s._currentTrackIdLoading = null; }); // Playing implies loading finished
+        element.onloadedmetadata = () => set(s => { if(s.isStreamingMode) s.duration = element.duration; });
+        element.ontimeupdate = () => {
+            const htmlCurrentTime = element.currentTime;
+            set(s => {
+                if(s.isStreamingMode && Math.abs(s.currentTime - htmlCurrentTime) > 0.05) { // Update only if changed significantly
+                    s.currentTime = htmlCurrentTime;
+                    if (s.currentTrackDetails?.id) {
+                         debouncedRecordProgress(s.currentTrackDetails.id, Math.floor(htmlCurrentTime * 1000));
+                    }
+                }
+            });
+         };
+        element.onprogress = () => {
+            if(element.buffered.length > 0) {
+               set(s => { if(s.isStreamingMode) s.bufferedTime = element.buffered.end(element.buffered.length - 1); });
+            }
+        };
+        element.onerror = (e) => {
+             console.error("HTMLAudioElement error:", element.error);
+             setError(`Audio playback error: ${element.error?.message || 'Unknown error'}`, get().currentTrackDetails?.id);
+        };
+    };
+    const removeAudioElementListeners = (element: HTMLAudioElement) => {
+         element.onplay = null;
+         element.onpause = null;
+         element.onended = null;
+         element.onwaiting = null;
+         element.onplaying = null;
+         element.onloadedmetadata = null;
+         element.ontimeupdate = null;
+         element.onprogress = null;
+         element.onerror = null;
+    };
+
 
     // --- Public Actions ---
     return {
       ...initialState,
+      // Initialize internal state properties
       _audioContext: null,
       _gainNode: null,
       _audioBuffer: null,
@@ -181,105 +255,63 @@ export const usePlayerStore = create(
       _playbackStartOffset: 0,
       _animationFrameId: null,
 
-      _initAudioContext: initAudioContextIfNeeded, // Expose for potential pre-warming
+      _initAudioContext: initAudioContextIfNeeded,
 
       _setHtmlAudioElementRef: (element) => {
          set(state => {
-            // Remove old listeners if element changes
-             if (state._htmlAudioElement) {
-                // Remove event listeners... (see below)
-             }
+             if (state._htmlAudioElement) { removeAudioElementListeners(state._htmlAudioElement); }
              state._htmlAudioElement = element;
-            // Add new listeners if element is set
              if (element) {
-                // --- HTML Audio Event Listeners ---
-                element.onplay = () => set(s => { if(s.isStreamingMode) s.playbackState = PlaybackState.PLAYING; });
-                element.onpause = () => set(s => { if(s.isStreamingMode && s.playbackState !== PlaybackState.ENDED) s.playbackState = PlaybackState.PAUSED; }); // Don't set paused if ended
-                
-                // Record final progress on ended event for streaming too
-                element.onended = () => {
-                    set(s => {
-                       if(s.isStreamingMode) {
-                           s.playbackState = PlaybackState.ENDED;
-                           // Record final progress
-                           if (s.currentTrackDetails?.id) {
-                               debouncedRecordProgress(s.currentTrackDetails.id, Math.floor(s.duration * 1000));
-                           }
-                       }
-                    });
-                    internalStop(get()); // Call internal stop
-                };
-                
-                element.onwaiting = () => set(s => { if(s.isStreamingMode) s.playbackState = PlaybackState.BUFFERING; });
-                element.onplaying = () => set(s => { if(s.isStreamingMode) s.playbackState = PlaybackState.PLAYING; }); // From waiting to playing
-                element.onloadedmetadata = () => set(s => { if(s.isStreamingMode) s.duration = element.duration; });
-                element.ontimeupdate = () => {
-                    const currentTime = element.currentTime;
-                    set(s => {
-                        if(s.isStreamingMode) {
-                            s.currentTime = currentTime;
-                            // --- Record progress periodically ---
-                            if (s.currentTrackDetails?.id) {
-                                 debouncedRecordProgress(s.currentTrackDetails.id, Math.floor(currentTime * 1000));
-                            }
-                            // --- End Record progress ---
-                        }
-                    });
-                 };
-                element.onprogress = () => { // Update buffered time
-                    if(element.buffered.length > 0) {
-                       set(s => { if(s.isStreamingMode) s.bufferedTime = element.buffered.end(element.buffered.length - 1); });
-                    }
-                };
-                element.onerror = (e) => {
-                     console.error("HTMLAudioElement error:", element.error);
-                     setError(`Audio playback error: ${element.error?.message || 'Unknown error'}`);
-                };
-                // Apply initial volume/mute state to new element
-                const currentState = get();
-                element.volume = currentState.isMuted ? 0 : currentState.volume;
-                element.muted = currentState.isMuted; // Sync muted property too
+                setupAudioElementListeners(element);
+                applyVolumeAndMute(state); // Apply current volume/mute to new element
              }
         });
       },
 
-      _updateVolumeGain: () => { // Internal helper to apply volume/mute
-         const state = get();
-         if (state._gainNode) {
-            state._gainNode.gain.setValueAtTime(state.isMuted ? 0 : state.volume, state._audioContext?.currentTime ?? 0);
-         }
-          // Also update HTML element volume/mute if in streaming mode
-         if (state.isStreamingMode && state._htmlAudioElement) {
-            state._htmlAudioElement.volume = state.isMuted ? 0 : state.volume;
-            state._htmlAudioElement.muted = state.isMuted;
-         }
-      },
-
-
       loadAndPlayTrack: async (trackId) => {
         const currentTrackId = get().currentTrackDetails?.id;
-        if (get().isLoading || currentTrackId === trackId) {
-            // If already loading this track, do nothing
-            // If this track is already loaded, maybe just call play()? Or restart?
-            // For now, if same track, just ensure it plays if paused
-            if(currentTrackId === trackId && get().playbackState === PlaybackState.PAUSED) {
+        if (get()._currentTrackIdLoading === trackId) return; // Already loading this track
+
+        // If same track is loaded but paused/ended, just play/restart
+        if (currentTrackId === trackId) {
+            const currentState = get().playbackState;
+             if (currentState === PlaybackState.PAUSED || currentState === PlaybackState.READY) {
                 get().play();
-            } else if (currentTrackId === trackId && (get().playbackState === PlaybackState.READY || get().playbackState === PlaybackState.ENDED)) {
-                get().seek(0); // Restart from beginning
-                get().play();
-            }
-            return;
+                return;
+             } else if (currentState === PlaybackState.ENDED) {
+                 get().seek(0);
+                 get().play();
+                 return;
+             } else if (currentState === PlaybackState.PLAYING || currentState === PlaybackState.BUFFERING) {
+                 return; // Already playing/buffering this track
+             }
+             // If IDLE or ERROR for the current track, proceed to reload
         }
 
-        // Stop previous track first
-        get().stop();
+        console.log(`Loading track: ${trackId}`);
+        get().stop(); // Stop previous track fully
 
-        set({ isLoading: true, error: null, playbackState: PlaybackState.LOADING });
+        set({
+            isLoading: true,
+            error: null,
+            playbackState: PlaybackState.LOADING,
+            currentTrackDetails: null, // Clear previous details
+            duration: 0,
+            currentTime: 0,
+            bufferedTime: 0,
+            isStreamingMode: false,
+            _audioBuffer: null,
+            _currentTrackIdLoading: trackId, // Mark this track as loading
+        });
 
         try {
-          // Fetch track details from backend using the service
-          // Assuming getTrackDetails returns the full DTO including durationMs and playUrl
           const trackDetails = await getTrackDetails(trackId);
+          // Check if we are still supposed to be loading *this* track
+          if (get()._currentTrackIdLoading !== trackId) {
+               console.log(`Load cancelled for ${trackId}, another track load started.`);
+               return; // Abort if another track started loading
+          }
+
           if (!trackDetails || !trackDetails.playUrl) {
             throw new Error("Track details or play URL missing.");
           }
@@ -291,156 +323,148 @@ export const usePlayerStore = create(
               state.currentTrackDetails = trackDetails;
               state.duration = trackDurationSec;
               state.isStreamingMode = useStreaming;
-              state.currentTime = 0; // Reset time
-              state.bufferedTime = 0;
-              state._audioBuffer = null; // Clear old buffer if any
+              // Pre-fill progress if available from track details
+              if(trackDetails.userProgressMs != null && trackDetails.userProgressMs > 0) {
+                  const progressSec = Math.min(trackDetails.userProgressMs / 1000, trackDurationSec); // Clamp
+                  state.currentTime = progressSec;
+                  state._playbackStartOffset = progressSec; // Set initial offset for WAAPI
+                  console.log(`Loaded initial progress for ${trackId}: ${progressSec}s`);
+              } else {
+                   state.currentTime = 0;
+                   state._playbackStartOffset = 0;
+              }
           });
 
-           const audioContext = initAudioContextIfNeeded(); // Ensure context is ready
-
+          const audioContext = initAudioContextIfNeeded();
 
           if (useStreaming) {
-             console.log("Using Streaming Mode");
-              set({ playbackState: PlaybackState.BUFFERING }); // Initial state before loading starts
+             console.log("Using Streaming Mode for", trackId);
+              set({ playbackState: PlaybackState.BUFFERING });
               const audioEl = get()._htmlAudioElement;
               if (!audioEl) { throw new Error("HTMLAudioElement ref not set."); }
 
-              // Create source node if it doesn't exist or context was reset
               let source = get()._sourceNode;
-              if(!source || !(source instanceof MediaElementAudioSourceNode)) {
+              // Only create source node if needed. It might persist across track loads if element doesn't change.
+              if(!source || !(source instanceof MediaElementAudioSourceNode) || get()._audioContext !== source.context) {
                   try {
+                       // Disconnect old source if context changed
+                       if (source && source.context !== get()._audioContext) source.disconnect();
                        source = audioContext.createMediaElementSource(audioEl);
-                       source.connect(get()._gainNode!); // Connect to gain
+                       source.connect(get()._gainNode!);
                        set(state => { state._sourceNode = source; });
                   } catch (err) {
-                      // This can happen if context was recreated and element already had a source
-                      console.warn("Could not create media element source (maybe context recreated?), trying to proceed.", err);
-                      // Attempt to connect existing node if possible? Complex. For now, log and hope element works.
-                       if(get()._sourceNode && get()._sourceNode instanceof MediaElementAudioSourceNode) {
-                           try { get()._sourceNode.connect(get()._gainNode!);} catch{} // Try reconnecting
-                       }
+                      console.warn("Could not create/connect media element source. Proceeding with element directly.", err);
+                      set(state => { state._sourceNode = null; }); // Ensure source node state is clean
                   }
               }
 
-              audioEl.src = trackDetails.playUrl; // Set src to start loading
-              audioEl.load(); // Explicitly call load
-              // Set playbackState to playing immediately? Or wait for 'canplay'?
-              // Let's rely on event handlers to set PLAYING state.
-               // Attempt to play immediately after setting src
-               // Browsers often require user interaction for first play.
-               // This might fail silently or throw a DOMException.
-               audioEl.play().catch(err => {
-                    console.warn("Auto-play blocked or failed:", err);
-                    // Keep state as BUFFERING/READY, user needs to click play manually.
-                    set(s => { if(s.playbackState === PlaybackState.PLAYING) s.playbackState = PlaybackState.READY; });
+              audioEl.src = trackDetails.playUrl;
+              audioEl.load();
+              // Set current time AFTER src and load
+              if (get().currentTime > 0) {
+                  audioEl.currentTime = get().currentTime;
+                  console.log(`Streaming: Set initial currentTime to ${get().currentTime}`);
+              }
+              // Attempt to play - might be blocked by browser
+              audioEl.play().catch(err => {
+                    console.warn(`Auto-play blocked for streaming track ${trackId}:`, err);
+                    set(s => {
+                        // If play failed, move to READY state instead of staying in BUFFERING/PLAYING
+                        if (s.playbackState === PlaybackState.PLAYING || s.playbackState === PlaybackState.BUFFERING) {
+                             s.playbackState = PlaybackState.READY;
+                             s.isLoading = false; // Ready, not loading
+                             s._currentTrackIdLoading = null;
+                        }
+                    });
                });
 
-
           } else {
-            console.log("Using WAAPI Buffer Mode");
-            set({ playbackState: PlaybackState.LOADING }); // Explicit loading state for fetch
-            // --- WAAPI Path ---
+            console.log("Using WAAPI Buffer Mode for", trackId);
+            set({ playbackState: PlaybackState.LOADING });
             const response = await fetch(trackDetails.playUrl);
-            if (!response.ok) {
-              throw new Error(`Failed to fetch audio file: ${response.statusText}`);
-            }
+            if (!response.ok) throw new Error(`HTTP error ${response.status}`);
             const arrayBuffer = await response.arrayBuffer();
+
+             // Check again if load was cancelled
+             if (get()._currentTrackIdLoading !== trackId) {
+                 console.log(`Load cancelled for ${trackId} during fetch/decode.`);
+                 return;
+             }
+
             set({ playbackState: PlaybackState.DECODING });
-            // Decode audio data
-             audioContext.decodeAudioData(arrayBuffer,
+            audioContext.decodeAudioData(arrayBuffer,
                 (decodedBuffer) => {
-                  set(state => {
-                      state._audioBuffer = decodedBuffer;
-                      state.duration = decodedBuffer.duration; // Update duration from buffer
-                      state.playbackState = PlaybackState.READY;
-                      state.isLoading = false;
-                      get().play(); // Auto-play after decoding
-                  });
+                    // Final check if load was cancelled during decode
+                    if (get()._currentTrackIdLoading !== trackId) {
+                        console.log(`Load cancelled for ${trackId} after decode.`);
+                        return;
+                    }
+                    set(state => {
+                        state._audioBuffer = decodedBuffer;
+                        // Use actual decoded duration for accuracy
+                        state.duration = decodedBuffer.duration;
+                        // If initial progress was loaded, ensure it's not beyond actual duration
+                        if (state.currentTime > state.duration) {
+                            state.currentTime = 0;
+                            state._playbackStartOffset = 0;
+                        }
+                        state.playbackState = PlaybackState.READY;
+                        state.isLoading = false;
+                        state._currentTrackIdLoading = null;
+                    });
+                    get().play(); // Auto-play after decoding
                 },
-                (decodeErr) => {
-                  console.error("Error decoding audio data:", decodeErr);
-                  setError(`Failed to decode audio: ${decodeErr.message}`);
+                (decodeErr: DOMException) => {
+                  setError(`Failed to decode audio: ${decodeErr.message}`, trackId);
                 }
             );
           }
-          // isLoading should be set to false once decoding is done or streaming starts playing
-          // Handled within decode callback or play event for streaming
         } catch (err: any) {
-          setError(`Failed to load track ${trackId}: ${err.message}`);
-        } finally {
-             // Set loading false here ONLY if not waiting for async decode
-             if (!get().isStreamingMode && get().playbackState !== PlaybackState.DECODING) {
-                 set({ isLoading: false });
-             }
-             // For streaming, loading ends when playing starts or error occurs
+          setError(`Failed to load track ${trackId}: ${err.message}`, trackId);
         }
       },
 
       play: () => {
         const { playbackState, isStreamingMode, _htmlAudioElement, _audioContext, _audioBuffer, currentTime } = get();
-        if (playbackState !== PlaybackState.READY && playbackState !== PlaybackState.PAUSED && playbackState !== PlaybackState.ENDED) {
-            return; // Can only play if ready/paused/ended
-        }
-        if (!_audioContext || !_gainNode) {
-             console.warn("Audio context not ready for play");
-             return;
-        }
-
-        // Ensure context is running (might be suspended after user interaction rules)
-         if(_audioContext.state === 'suspended') {
-             _audioContext.resume();
-         }
-
+        if (playbackState !== PlaybackState.READY && playbackState !== PlaybackState.PAUSED && playbackState !== PlaybackState.ENDED) return;
+        if (!_audioContext || !get()._gainNode) { initAudioContextIfNeeded(); console.warn("Audio context not ready, attempted init."); return; }
+        if (_audioContext.state === 'suspended') { _audioContext.resume(); }
 
         if (isStreamingMode) {
-          if (_htmlAudioElement) {
-             _htmlAudioElement.play().catch(err => setError(`Failed to play: ${err.message}`));
-             // State update handled by 'onplay' event
-          } else { setError("HTML audio element not available."); }
+          if (_htmlAudioElement) { _htmlAudioElement.play().catch(err => setError(`Play command failed: ${err.message}`, get().currentTrackDetails?.id)); }
+          else { setError("HTML audio element not available."); }
         } else {
-          // WAAPI Play
           if (!_audioBuffer) { setError("Audio buffer not loaded."); return; }
-          // Stop existing source if any (e.g., playing again after ended)
-          if (get()._sourceNode) { internalStop(get()); }
+          internalStop(get()); // Stop existing source if any
 
           const source = _audioContext.createBufferSource();
           source.buffer = _audioBuffer;
-          const gainNode = get()._gainNode!;
-          source.connect(gainNode);
+          source.connect(get()._gainNode!);
 
-          // Handle seeking: start from currentTime
-          const offset = currentTime % _audioBuffer.duration; // Loop if currentTime > duration
-          const startOffset = Math.max(0, offset); // Ensure non-negative
+          const offset = Math.max(0, currentTime % _audioBuffer.duration);
 
           set(state => {
               state._sourceNode = source;
-              state._playbackStartTime = _audioContext.currentTime; // Record context time
-              state._playbackStartOffset = startOffset; // Record where we started in buffer
+              state._playbackStartTime = _audioContext.currentTime;
+              state._playbackStartOffset = offset;
               state.playbackState = PlaybackState.PLAYING;
-              state.error = null; // Clear previous errors
+              state.error = null;
+              state.isLoading = false; // Ensure loading is false
+              state._currentTrackIdLoading = null;
           });
 
-           source.onended = () => {
-                // Only set to ENDED if it wasn't stopped manually or by error
-                // The animation frame loop will also detect end based on time
-                if (get().playbackState === PlaybackState.PLAYING) {
-                    set(s => { s.playbackState = PlaybackState.ENDED; });
-                    internalStop(get());
-                }
-           };
+           source.onended = () => { if (get().playbackState === PlaybackState.PLAYING) { get().seek(get().duration); /* Trigger ended state via seek */ } }; // Let update loop handle ENDED state
 
-          source.start(0, startOffset); // Start playback (0=now, startOffset=where in buffer)
-          requestAnimationFrame(updateTimeWAAPI); // Start time updates
+          source.start(0, offset);
+          if (get()._animationFrameId === null) requestAnimationFrame(updateTimeWAAPI);
         }
       },
 
       pause: () => {
-         const { playbackState, isStreamingMode, _htmlAudioElement, _sourceNode, _animationFrameId } = get();
-         if (playbackState !== PlaybackState.PLAYING && playbackState !== PlaybackState.BUFFERING) return;
-
-         internalStop(get()); // Use internal stop to handle cleanup for both modes
-         // internalStop sets state to READY, override to PAUSED if we were playing/buffering
-          set(state => { state.playbackState = PlaybackState.PAUSED; });
+         const state = get();
+         if (state.playbackState !== PlaybackState.PLAYING && state.playbackState !== PlaybackState.BUFFERING) return;
+         internalStop(state); // Handles stopping source/audio and cancelling animation frame
+         set(s => { s.playbackState = PlaybackState.PAUSED; });
       },
 
       togglePlayPause: () => {
@@ -448,58 +472,61 @@ export const usePlayerStore = create(
          if (playbackState === PlaybackState.PLAYING || playbackState === PlaybackState.BUFFERING) {
              get().pause();
          } else if (playbackState === PlaybackState.PAUSED || playbackState === PlaybackState.READY || playbackState === PlaybackState.ENDED) {
-             // If ended, seek to start before playing
              if(playbackState === PlaybackState.ENDED) { get().seek(0); }
              get().play();
          }
       },
 
       seek: (timeSeconds) => {
-          const { duration, playbackState, isStreamingMode, _htmlAudioElement, _audioBuffer, _audioContext } = get();
-          if (duration <= 0 || playbackState === PlaybackState.LOADING || playbackState === PlaybackState.DECODING) return; // Cannot seek if not ready or no duration
+          const { duration, playbackState, isStreamingMode, _htmlAudioElement, _audioBuffer } = get();
+          if (duration <= 0 || playbackState === PlaybackState.LOADING || playbackState === PlaybackState.DECODING || playbackState === PlaybackState.IDLE) return;
 
-          const seekTime = Math.max(0, Math.min(timeSeconds, duration)); // Clamp time
+          const seekTime = Math.max(0, Math.min(timeSeconds, duration));
 
-          set(state => { state.currentTime = seekTime; }); // Optimistically update currentTime
+          set(state => { state.currentTime = seekTime; }); // Optimistic update
 
           if (isStreamingMode) {
               if (_htmlAudioElement) { _htmlAudioElement.currentTime = seekTime; }
           } else {
-              // WAAPI Seek: Stop current source and start a new one at the seek time
-               if (playbackState === PlaybackState.PLAYING) {
-                    // Need to stop, then start again at new offset
-                    internalStop(get());
-                    set(state => { state.currentTime = seekTime; }); // Ensure time is set before play
-                    get().play(); // Restart playback from the new seekTime
-               } else {
-                   // If paused/ready/ended, just update the time. Play will start from here.
-                    set(state => {
-                       state._playbackStartOffset = seekTime; // Update where next play should start
-                    });
-               }
+              if (playbackState === PlaybackState.PLAYING) {
+                    internalStop(get()); // Stop current playback
+                    set(state => { state.currentTime = seekTime; }); // Update time for restart
+                    get().play(); // Restart from new time
+              } else {
+                    // If paused/ready/ended, just update the offset for next play
+                    set(state => { state._playbackStartOffset = seekTime; });
+              }
           }
+            // Record progress immediately on seek? Or let periodic update handle it?
+           // Let periodic handle it to avoid spamming on slider drag.
       },
 
       setVolume: (volume) => {
-        const newVolume = Math.max(0, Math.min(1, volume)); // Clamp 0-1
+        const newVolume = Math.max(0, Math.min(1, volume));
          set(state => {
              state.volume = newVolume;
-             // If setting volume while muted, unmute
-             if (newVolume > 0 && state.isMuted) {
-                 state.isMuted = false;
-             }
-             get()._updateVolumeGain(); // Apply changes
+             if (newVolume > 0 && state.isMuted) { state.isMuted = false; }
+             applyVolumeAndMute(state);
          });
       },
 
       toggleMute: () => {
          set(state => {
             state.isMuted = !state.isMuted;
-            get()._updateVolumeGain(); // Apply changes
+            applyVolumeAndMute(state);
          });
       },
 
       stop: () => { // Full stop, unload track
+          console.log("Stop action called");
+          const currentTrackId = get().currentTrackDetails?.id;
+          const currentTimeMs = get().currentTime * 1000;
+          // Record final progress before stopping
+          if (currentTrackId && currentTimeMs > 0) {
+               console.log(`Recording final progress ${currentTimeMs}ms on stop`);
+               recordProgressAction(currentTrackId, Math.round(currentTimeMs)).catch(err => console.error("Error recording final progress on stop:", err));
+          }
+
           internalStop(get());
            set(state => {
                state.playbackState = PlaybackState.IDLE;
@@ -511,36 +538,25 @@ export const usePlayerStore = create(
                state.error = null;
                state.isStreamingMode = false;
                state._audioBuffer = null;
-               // Reset HTML audio element src?
+               state._currentTrackIdLoading = null;
                if (state._htmlAudioElement) {
-                   state._htmlAudioElement.src = "";
+                   state._htmlAudioElement.pause();
                    state._htmlAudioElement.removeAttribute("src"); // Force unload
-                   state._htmlAudioElement.load(); // Reset state
+                   state._htmlAudioElement.load();
                }
            });
       },
 
       cleanup: () => {
          console.log("Cleaning up player store resources");
-         internalStop(get()); // Stop playback and nodes
+         get().stop(); // Ensure everything is stopped and possibly progress recorded
          const ctx = get()._audioContext;
           if (ctx && ctx.state !== 'closed') {
-             ctx.close().catch(e => console.warn("Error closing AudioContext:", e)); // Close context
+             ctx.close().catch(e => console.warn("Error closing AudioContext:", e));
          }
-          set(state => { // Reset internal references
-            state._audioContext = null;
-            state._gainNode = null;
-            state._audioBuffer = null;
-            state._sourceNode = null;
-            // Don't nullify _htmlAudioElement ref here, component manages its lifecycle
-          });
+         // Reset all internal refs except the HTML element itself
+          set({ _audioContext: null, _gainNode: null, _audioBuffer: null, _sourceNode: null });
       }
     };
-  }),
-  {
-    name: 'player-storage', // Optional: Name for Zustand devtools
-  }
+  })
 );
-
-// Optional: Subscribe to state changes for debugging
-// usePlayerStore.subscribe(newState => console.log("Player State Change:", newState));

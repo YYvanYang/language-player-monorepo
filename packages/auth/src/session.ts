@@ -1,12 +1,22 @@
-// packages/auth/src/session.ts (Refined)
+// packages/auth/src/session.ts
 import type { SessionOptions } from 'iron-session';
 
 // Define session data structure - adjust based on your needs
 export interface SessionData {
     userId: string; // UUID string
-    isAdmin?: boolean; // Crucial for Admin Panel
+    isAdmin?: boolean; // Optional: For role checks within apps
     // Add other relevant session data: expiry? csrf token? name? email?
 }
+
+const thirtyDaysInSeconds = 30 * 24 * 60 * 60;
+
+// Base options reusable for both apps
+const baseCookieOptions: SessionOptions['cookieOptions'] = {
+    secure: process.env.NODE_ENV === 'production', // Use secure cookies in production
+    httpOnly: true,                             // Prevent client-side JS access
+    path: '/',                                  // Cookie accessible for all paths
+    maxAge: undefined,                          // Default to session cookie unless ttl is set
+};
 
 // Function to get User App Session Options
 export function getUserSessionOptions(): SessionOptions {
@@ -17,7 +27,6 @@ export function getUserSessionOptions(): SessionOptions {
         console.warn("USER_SESSION_NAME environment variable is not set. Using default 'user_app_auth_session'.");
     }
     if (!secret || secret.length < 32) {
-        // Throwing an error might be better in production to prevent startup with weak secrets
         console.error("CRITICAL: USER_SESSION_SECRET environment variable is not set or is too short (requires >= 32 chars)!");
         throw new Error("USER_SESSION_SECRET environment variable is not set or is too short!");
     }
@@ -25,13 +34,11 @@ export function getUserSessionOptions(): SessionOptions {
     return {
         cookieName: name || 'user_app_auth_session',
         password: secret,
-        ttl: 0, // 0 = session cookie (expires when browser closes). Set > 0 for persistent cookies (in seconds).
+        ttl: 0, // Session cookie
+        // ttl: thirtyDaysInSeconds, // Example: Use if you want persistent login for 30 days
         cookieOptions: {
-            secure: process.env.NODE_ENV === 'production', // Use secure cookies in production
-            httpOnly: true,                             // Prevent client-side JS access
-            sameSite: 'lax',                            // Good default for most cases
-            maxAge: undefined,                          // Let ttl handle expiry if set, otherwise session cookie
-            path: '/',                                  // Cookie accessible for all paths
+            ...baseCookieOptions,
+            sameSite: 'lax', // Good default for user-facing app
         },
     };
 }
@@ -48,17 +55,18 @@ export function getAdminSessionOptions(): SessionOptions {
         console.error("CRITICAL: ADMIN_SESSION_SECRET environment variable is not set or is too short (requires >= 32 chars)!");
         throw new Error("ADMIN_SESSION_SECRET environment variable is not set or is too short!");
     }
+    if (secret === process.env.USER_SESSION_SECRET) {
+        console.error("CRITICAL: ADMIN_SESSION_SECRET must be different from USER_SESSION_SECRET!");
+        throw new Error("Admin and User session secrets cannot be the same!");
+    }
 
     return {
         cookieName: name || 'admin_panel_auth_session',
         password: secret, // MUST BE DIFFERENT FROM USER SECRET
-        ttl: 0, // Session cookie recommended for admin
+        ttl: 0, // Session cookie strongly recommended for admin
         cookieOptions: {
-            secure: process.env.NODE_ENV === 'production',
-            httpOnly: true,
-            sameSite: 'strict', // Stricter setting for admin panel
-            maxAge: undefined,
-            path: '/',
+            ...baseCookieOptions,
+            sameSite: 'strict', // Stricter setting recommended for admin panel
         },
     };
 }

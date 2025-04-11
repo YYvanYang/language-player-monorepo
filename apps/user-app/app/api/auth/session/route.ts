@@ -1,109 +1,87 @@
 // apps/user-app/app/api/auth/session/route.ts
 import { type NextRequest, NextResponse } from 'next/server';
-import { getIronSession, SessionOptions } from 'iron-session';
-import type { SessionData } from '@repo/auth'; 
+import { getIronSession } from 'iron-session';
+import { SessionData, getUserSessionOptions } from '@repo/auth'; // Use shared config
 
-// --- Configure Session Options ---
-// !! IMPORTANT: Use UNIQUE names and secrets per app !!
-const sessionOptions: SessionOptions = {
-  cookieName: process.env.USER_SESSION_NAME || 'user_app_auth_session', // App-specific name
-  password: process.env.USER_SESSION_SECRET!, // MUST be set in .env*, complex, >= 32 chars
-  cookieOptions: {
-    secure: process.env.NODE_ENV === 'production', // Use secure cookies in production
-    httpOnly: true,                             // Prevent client-side JS access
-    sameSite: 'lax',                            // Good default for most cases
-    maxAge: undefined,                          // Session cookie (expires when browser closes)
-    path: '/',                                  // Cookie accessible for all paths
-  },
-};
-if (!sessionOptions.password || sessionOptions.password.length < 32) {
-  console.error("CRITICAL: USER_SESSION_SECRET environment variable is not set or is too short (requires >= 32 chars)!");
-  // Optional: throw an error during build/startup in production if secret is missing/weak
-  // throw new Error("USER_SESSION_SECRET environment variable is not set or is too short!");
-}
-// --- End Configuration ---
+const sessionOptions = getUserSessionOptions(); // Get user-specific options
 
 /**
  * GET /api/auth/session
- * Checks if a valid session exists and returns basic user info.
- * Used by AuthContext on client-side load and potentially middleware server-side.
+ * Checks if a valid user session exists and returns basic user info.
  */
 export async function GET(request: NextRequest) {
-  // Pass dummy response for type checking, actual response generated later
-  const response = new NextResponse();
-  const session = await getIronSession<SessionData>(request, response, sessionOptions);
+  const response = new NextResponse(null, { status: 200 }); // Prepare response
+  try {
+    const session = await getIronSession<SessionData>(request, response, sessionOptions);
 
-  if (!session.userId) {
-    console.log("Session GET: No userId found in session.");
-    return NextResponse.json({ user: null, isAuthenticated: false }, { status: 200 }); // Return 200 OK, but indicate not authenticated
+    if (!session.userId) {
+      console.log("User Session GET: No userId found.");
+      return NextResponse.json({ user: null, isAuthenticated: false }, { status: 200 });
+    }
+
+    console.log(`User Session GET: Valid session for userId ${session.userId}`);
+    // Return minimal info for client-side context
+    return NextResponse.json({
+      user: { id: session.userId },
+      isAuthenticated: true,
+    });
+  } catch (error) {
+      console.error("User Session GET Error:", error);
+      return NextResponse.json({ message: "Failed to retrieve user session." }, { status: 500 });
   }
-
-  console.log(`Session GET: Valid session found for userId ${session.userId}`);
-  // Return relevant (non-sensitive) session data
-  // Avoid returning the session cookie itself or sensitive details
-  return NextResponse.json({
-    user: { id: session.userId }, // Return only ID for AuthContext
-    isAuthenticated: true,
-  });
 }
 
 /**
  * POST /api/auth/session
  * Creates or updates the user session after successful login/registration.
- * Called securely by Server Actions.
  */
 export async function POST(request: NextRequest) {
-  // Pass dummy response for type checking, actual response generated later
-  const response = new NextResponse();
+  const response = new NextResponse(null, { status: 200 }); // Prepare response
   try {
     const body = await request.json();
-    const userId = body.userId as string; // Expecting userId from the caller Server Action
+    const userId = body.userId as string;
 
     if (!userId) {
-      console.warn("Session POST: userId is required in request body.");
+      console.warn("User Session POST: userId is required.");
       return NextResponse.json({ message: 'userId is required' }, { status: 400 });
     }
 
-    // Validate userId format if possible (e.g., is it a valid UUID?)
-    // Could use uuid.parse() here
+    // Basic validation (e.g., check if it looks like a UUID) - more robust validation might be needed
+    // if (userId.length !== 36) { // Example check
+    //    return NextResponse.json({ message: 'Invalid userId format' }, { status: 400 });
+    // }
 
     const session = await getIronSession<SessionData>(request, response, sessionOptions);
-
-    // Update session data
     session.userId = userId;
-    // Clear any previous admin flag if structure was reused (shouldn't happen with separate cookies)
-    // delete session.isAdmin;
+    delete session.isAdmin; // Ensure admin flag is not accidentally set here
+    await session.save();
 
-    await session.save(); // Encrypts and prepares the Set-Cookie header for the response
-
-    console.log(`Session POST: Session saved successfully for userId ${session.userId}`);
-    // The actual cookie is set via the headers on the 'response' object passed to getIronSession
-    return NextResponse.json({ ok: true, userId: session.userId }); // Confirm session save
+    console.log(`User Session POST: Session saved for userId ${session.userId}`);
+    return NextResponse.json({ ok: true, userId: session.userId });
 
   } catch (error) {
-    console.error("Session POST Error:", error);
-    const message = error instanceof Error ? error.message : "Failed to set session";
+    console.error("User Session POST Error:", error);
+    const message = error instanceof Error ? error.message : "Failed to set user session";
     return NextResponse.json({ message }, { status: 500 });
   }
 }
 
 /**
  * DELETE /api/auth/session
- * Destroys the current session (logout).
- * Called securely by Server Actions.
+ * Destroys the current user session (logout).
  */
 export async function DELETE(request: NextRequest) {
-  // Pass dummy response for type checking, actual response generated later
-  const response = new NextResponse();
+  const response = new NextResponse(null, { status: 200 }); // Prepare response
   try {
     const session = await getIronSession<SessionData>(request, response, sessionOptions);
-    session.destroy(); // Clears session data and prepares Set-Cookie header to remove cookie
+    session.destroy();
 
-    console.log("Session DELETE: Session destroyed (logout).");
-    return NextResponse.json({ ok: true }); // Confirm logout
+    console.log("User Session DELETE: Session destroyed.");
+    // The Set-Cookie header to clear the cookie is added to 'response' by session.destroy + save
+    return NextResponse.json({ ok: true });
   } catch (error) {
-    console.error("Session DELETE Error:", error);
-    const message = error instanceof Error ? error.message : "Failed to destroy session";
+    console.error("User Session DELETE Error:", error);
+    const message = error instanceof Error ? error.message : "Failed to destroy user session";
     return NextResponse.json({ message }, { status: 500 });
   }
 }

@@ -1,4 +1,4 @@
-// packages/utils/src/index.ts (Refined)
+// packages/utils/src/index.ts
 import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
 
@@ -8,11 +8,12 @@ export function cn(...inputs: ClassValue[]) {
 
 /**
  * Formats a duration in milliseconds into a string like MM:SS or HH:MM:SS.
- * @param ms Duration in milliseconds.
- * @returns Formatted time string.
+ * Handles undefined, null, and negative values gracefully.
+ * @param ms Duration in milliseconds (number).
+ * @returns Formatted time string "MM:SS" or "HH:MM:SS". Returns "00:00" for invalid inputs.
  */
 export function formatDuration(ms: number | undefined | null): string {
-  if (ms === null || ms === undefined || ms < 0) {
+  if (ms === null || ms === undefined || ms < 0 || isNaN(ms)) {
     return "00:00";
   }
   const totalSeconds = Math.floor(ms / 1000);
@@ -24,7 +25,7 @@ export function formatDuration(ms: number | undefined | null): string {
   const minutesStr = minutes < 10 ? `0${minutes}` : `${minutes}`;
 
   if (hours > 0) {
-    const hoursStr = hours < 10 ? `0${hours}` : `${hours}`;
+    const hoursStr = hours < 10 ? `0${hours}` : `${hours}`; // Pad hours too if needed, though less common
     return `${hoursStr}:${minutesStr}:${secondsStr}`;
   }
   return `${minutesStr}:${secondsStr}`;
@@ -52,39 +53,37 @@ export function debounce<T extends (...args: any[]) => any>(
 }
 
 /**
- * Builds a query string from a parameters object.
- * Handles undefined, null, string, number, boolean, and array values.
+ * Builds a URL query string from a parameters object.
+ * Correctly handles arrays by repeating the key.
+ * Encodes keys and values. Skips null/undefined values.
  * @param params - An object containing query parameters.
- * @returns A URL query string (e.g., "?limit=10&offset=0&tags=news&tags=podcast") or an empty string.
+ * @returns A URL query string starting with '?' (e.g., "?limit=10&offset=0&tags=news&tags=podcast") or an empty string if no params.
  */
 export function buildQueryString(params?: Record<string, any> | null): string {
     if (!params) {
       return '';
     }
 
-    const queryParts: string[] = [];
+    const query = new URLSearchParams();
 
     Object.entries(params).forEach(([key, value]) => {
       if (value === undefined || value === null) {
-        return; // Skip undefined or null values
+        return; // Skip null/undefined
       }
 
       if (Array.isArray(value)) {
+        // Handle arrays by appending each value
         value.forEach((item) => {
           if (item !== undefined && item !== null) {
-             queryParts.push(`${encodeURIComponent(key)}=${encodeURIComponent(String(item))}`);
+            query.append(key, String(item)); // Use append for arrays
           }
         });
       } else {
-        queryParts.push(`${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`);
+        // Handle other types (string, number, boolean)
+        query.set(key, String(value)); // Use set for non-array types
       }
     });
 
-    if (queryParts.length === 0) {
-      return '';
-    }
-
-    return `?${queryParts.join('&')}`;
-  }
-
-// Add other common utilities: capitalize, truncate, etc if needed
+    const queryString = query.toString();
+    return queryString ? `?${queryString}` : ''; // Prepend '?' if not empty
+}
