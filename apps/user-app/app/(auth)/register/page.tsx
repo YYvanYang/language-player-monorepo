@@ -1,6 +1,6 @@
 // apps/user-app/app/(auth)/register/page.tsx
 import Link from 'next/link';
-import { RegisterForm } from '@/../_components/auth/RegisterForm'; // Adjust import alias based on your tsconfig paths
+import { RegisterForm } from '@/_components/auth/RegisterForm'; // Adjust import alias based on your tsconfig paths
 
 export const metadata = { // Optional: Set page metadata
   title: 'Register - AudioLang Player',

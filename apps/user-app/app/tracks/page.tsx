@@ -1,6 +1,6 @@
 // apps/user-app/app/tracks/page.tsx
-import { listTracks } from '@/../_services/trackService'; // Adjust alias
-import { TrackList } from '@/../_components/track/TrackList'; // Adjust alias
+import { listTracks } from '@/_services/trackService'; // Adjust alias
+import { TrackList } from '@/_components/track/TrackList'; // Adjust alias
 import type { ListTrackQueryParams } from '@repo/types';
 // Import PaginationControls if you build one
 

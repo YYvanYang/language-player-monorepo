@@ -2,7 +2,7 @@
 'use client'; // Needs logout action trigger
 
 import Link from 'next/link';
-import { adminLogoutAction } from '@/../_actions/adminAuthActions'; // Adjust alias
+import { adminLogoutAction } from '@/_actions/adminAuthActions'; // Adjust alias
 import { Button } from '@repo/ui';
 import { LogOut, UserCog } from 'lucide-react'; // Or admin-specific icon
 

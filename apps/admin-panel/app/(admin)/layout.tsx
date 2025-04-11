@@ -1,8 +1,8 @@
 // apps/admin-panel/app/(admin)/layout.tsx
 // Can be a Server Component as it just arranges layout components
 import React from 'react';
-import { AdminHeader } from '@/../_components/layout/AdminHeader'; // Adjust alias
-import { AdminSidebar } from '@/../_components/layout/AdminSidebar'; // Adjust alias
+import { AdminHeader } from '@/_components/layout/AdminHeader'; // Adjust alias
+import { AdminSidebar } from '@/_components/layout/AdminSidebar'; // Adjust alias
 
 export default function AdminProtectedLayout({
   children,

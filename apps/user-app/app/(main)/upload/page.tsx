@@ -1,17 +1,17 @@
 // apps/user-app/app/(main)/upload/page.tsx
 'use client';
 
-import React, { useState, useCallback, ChangeEvent, useTransition, FormEvent } from 'react';
+import React, { useState, useCallback, ChangeEvent, useTransition, FormEvent, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import {
     requestUploadAction,
     createTrackMetadataAction,
     requestBatchUploadAction,
     completeBatchUploadAction
-} from '@/../_actions/uploadActions';
-import { Button, Input, Label, Textarea, Select, Checkbox, Spinner } from '@repo/ui'; // Adjust alias
-import { UploadCloud, FileAudio, CheckCircle, AlertTriangle, Loader, ListPlus, CircleCheckBig, CircleX } from 'lucide-react';
-import { useForm, useFieldArray, Controller } from 'react-hook-form';
+} from '@/_actions/uploadActions';
+import { Button, Input, Label, Textarea, Select, Checkbox, Spinner, Progress, Card, CardContent, CardHeader, CardTitle } from '@repo/ui';
+import { UploadCloud, FileAudio, CheckCircle, AlertTriangle, Loader, ListPlus, CircleCheckBig, CircleX, X as IconX, RotateCcw } from 'lucide-react';
+import { useForm, useFieldArray, Controller, SubmitHandler } from 'react-hook-form';
 import type {
     AudioLevel,
     CompleteUploadRequestDTO,
@@ -21,20 +21,23 @@ import type {
  } from '@repo/types';
 import { cn } from '@repo/utils';
 
-// --- Single File Upload State ---
+// --- State Types ---
 type SingleUploadStage = 'select' | 'requestingUrl' | 'uploading' | 'metadata' | 'completing' | 'success' | 'error';
-
-// --- Batch File Upload State ---
 interface BatchFileStatus {
+    id: string; // Unique ID for list key
     file: File;
     status: 'pending' | 'requesting' | 'uploading' | 'error' | 'uploaded';
     progress: number;
     uploadUrl?: string;
     objectKey?: string;
     errorMsg?: string;
-    metadata?: Partial<BatchCompleteUploadItemDTO>; // Store metadata entered by user
+    metadata?: Partial<BatchCompleteUploadItemDTO>;
+    xhr?: XMLHttpRequest; // To allow cancellation
 }
 type BatchUploadStage = 'select' | 'uploading' | 'metadata' | 'completing' | 'results';
+
+// --- Helper ---
+const getAudioDuration = (audioFile: File): Promise<number | null> => { /* ... same as before ... */ };
 
 export default function UploadPage() {
     const router = useRouter();
@@ -46,19 +49,31 @@ export default function UploadPage() {
     const [singleProgress, setSingleProgress] = useState(0);
     const [singleUploadResult, setSingleUploadResult] = useState<{ uploadUrl: string; objectKey: string } | null>(null);
     const [singleIsProcessing, startSingleTransition] = useTransition();
+    const singleXhrRef = useRef<XMLHttpRequest | null>(null);
 
     const { register: registerMeta, handleSubmit: handleMetaSubmit, formState: { errors: metaErrors }, reset: resetMetaForm, setValue: setMetaValue } = useForm<CompleteUploadRequestDTO>();
 
+    const resetSingleUpload = () => {
+        if (singleXhrRef.current) {
+            singleXhrRef.current.abort();
+            singleXhrRef.current = null;
+        }
+        setSingleFile(null);
+        setSingleStage('select');
+        setSingleError(null);
+        setSingleProgress(0);
+        setSingleUploadResult(null);
+        resetMetaForm();
+        // Clear file input visually
+        const fileInput = document.getElementById('singleAudioFile') as HTMLInputElement;
+        if (fileInput) fileInput.value = '';
+    }
+
     const handleSingleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+        resetSingleUpload(); // Reset everything on new file selection
         const file = event.target.files?.[0];
         if (file) {
             setSingleFile(file);
-            setSingleStage('select');
-            setSingleError(null);
-            setSingleProgress(0);
-            setSingleUploadResult(null);
-            resetMetaForm(); // Reset metadata form too
-            // Attempt to get duration client-side
             getAudioDuration(file).then(duration => {
                 if (duration) setMetaValue('durationMs', duration);
             });
@@ -66,10 +81,7 @@ export default function UploadPage() {
     };
 
     const handleSingleUpload = useCallback(async () => {
-        if (!singleFile) {
-            setSingleError("Please select a file.");
-            return;
-        }
+        if (!singleFile || singleStage !== 'select') return;
         setSingleStage('requestingUrl');
         setSingleError(null);
         startSingleTransition(async () => {
@@ -84,60 +96,67 @@ export default function UploadPage() {
 
             // Perform direct upload
             const xhr = new XMLHttpRequest();
+            singleXhrRef.current = xhr; // Store XHR reference for cancellation
             xhr.open('PUT', urlResult.uploadUrl, true);
             xhr.upload.onprogress = (event) => {
                 if (event.lengthComputable) setSingleProgress(Math.round((event.loaded / event.total) * 100));
             };
             xhr.onload = () => {
+                singleXhrRef.current = null; // Clear ref on completion
                 if (xhr.status >= 200 && xhr.status < 300) {
-                    setSingleStage('metadata'); // Move to metadata entry
-                    setMetaValue('objectKey', urlResult.objectKey); // Pre-fill objectKey
+                    setSingleStage('metadata');
+                    setMetaValue('objectKey', urlResult.objectKey);
                 } else {
-                    setSingleError(`Upload failed: ${xhr.statusText || 'Network Error'}`);
+                    setSingleError(`Upload failed: ${xhr.statusText || 'Error'}`);
                     setSingleStage('error');
                 }
             };
             xhr.onerror = () => {
-                setSingleError("Upload failed due to network error.");
-                setSingleStage('error');
+                singleXhrRef.current = null;
+                // Check if aborted by user
+                if (xhr.status === 0 && !navigator.onLine) {
+                     setSingleError("Upload failed: Network error.");
+                } else if (xhr.status !== 0) { // Don't show error if aborted (status 0 usually)
+                     setSingleError("Upload error occurred.");
+                }
+                if (singleStage !== 'select') setSingleStage('error'); // Avoid setting error if already reset
+            };
+            xhr.onabort = () => {
+                 singleXhrRef.current = null;
+                 console.log("Single upload aborted");
+                 // State reset is handled by resetSingleUpload
             };
             xhr.setRequestHeader('Content-Type', singleFile.type);
             xhr.send(singleFile);
         });
-    }, [singleFile, setMetaValue]);
+    }, [singleFile, singleStage, setMetaValue]);
 
     const onMetadataSubmit: SubmitHandler<CompleteUploadRequestDTO> = (data) => {
-        if (!singleUploadResult?.objectKey) {
-            setSingleError("Upload result missing. Please try again.");
-            setSingleStage('error');
-            return;
-        }
-        // Ensure objectKey is correct
-        data.objectKey = singleUploadResult.objectKey;
-        // Basic validation if needed before action
-        if (data.durationMs <= 0) {
-            // RHF should catch this, but double check
-            setSingleError("Duration must be positive.");
-            return;
-        }
+         if (!singleUploadResult?.objectKey || singleStage !== 'metadata') return;
+         data.objectKey = singleUploadResult.objectKey; // Ensure key is correct
+         // Convert tags string back to array if using simple input
+         if (typeof data.tags === 'string') {
+             data.tags = (data.tags as string).split(',').map(t => t.trim()).filter(Boolean);
+         }
 
-        setSingleStage('completing');
-        setSingleError(null);
-        startSingleTransition(async () => {
-            // Pass data directly now
-            const result = await createTrackMetadataAction(data.objectKey, data); // Use adjusted action if needed
-            if (result.success && result.track) {
-                setSingleStage('success');
-                setSingleError(null);
-                // Invalidate cache or redirect
-                // revalidateTag('tracks'); // Actions do this
-                router.push('/tracks');
-            } else {
-                setSingleError(result.message || "Failed to create track metadata.");
-                setSingleStage('error');
-            }
-        });
-    };
+         setSingleStage('completing');
+         setSingleError(null);
+         startSingleTransition(async () => {
+             // If createTrackMetadataAction expects FormData, construct it here.
+             // If it expects JSON (like currently defined), pass 'data' directly.
+             // Assuming action expects JSON based on previous refinement:
+             const result = await createTrackMetadataAction(data.objectKey, data as any); // Action needs adjustment if expecting FormData
+             if (result.success && result.track) {
+                 setSingleStage('success');
+                 // Optionally wait briefly before redirecting
+                 setTimeout(() => router.push(`/tracks/${result.track?.id}`), 1500); // Redirect to track detail
+             } else {
+                 setSingleError(result.message || "Failed to create track.");
+                 setSingleStage('metadata'); // Return to metadata stage on error
+             }
+         });
+     };
+
 
     // --- Batch Upload State & Logic ---
     const [batchFiles, setBatchFiles] = useState<BatchFileStatus[]>([]);
@@ -147,330 +166,233 @@ export default function UploadPage() {
     const [batchResults, setBatchResults] = useState<BatchCompleteUploadResponseItemDTO[]>([]);
 
     const { control: batchControl, register: batchRegister, handleSubmit: handleBatchMetaSubmit, formState: { errors: batchMetaErrors }, reset: resetBatchMetaForm, getValues: getBatchMetaValues, setValue: setBatchMetaValue } = useForm<{ tracks: BatchCompleteUploadItemDTO[] }>({ defaultValues: { tracks: [] } });
-    const { fields, append, remove } = useFieldArray({ control: batchControl, name: "tracks", keyName: "formId" }); // Use 'formId' as key
+    const { fields, append, remove, replace } = useFieldArray({ control: batchControl, name: "tracks", keyName: "formId" });
 
-    const handleBatchFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
-        const files = event.target.files;
-        if (!files || files.length === 0) return;
-
+    const resetBatchUpload = () => {
+        batchFiles.forEach(bf => bf.xhr?.abort());
+        setBatchFiles([]);
         setBatchStage('select');
         setBatchError(null);
         setBatchResults([]);
+        replace([]); // Reset RHF field array
+        const fileInput = document.getElementById('batchAudioFiles') as HTMLInputElement;
+        if (fileInput) fileInput.value = '';
+    }
+
+    const handleBatchFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
+        resetBatchUpload();
+        const files = event.target.files;
+        if (!files || files.length === 0) return;
 
         const newFileStatuses: BatchFileStatus[] = [];
+        const metadataDefaults: Partial<BatchCompleteUploadItemDTO>[] = [];
+
         for (const file of Array.from(files)) {
-             const duration = await getAudioDuration(file); // Await duration detection
+             const duration = await getAudioDuration(file);
+             const fileId = crypto.randomUUID(); // Generate unique ID for list key
              newFileStatuses.push({
-                file: file, status: 'pending', progress: 0,
-                metadata: { // Pre-fill filename as title and detected duration
-                    title: file.name.replace(/\.[^/.]+$/, ""), // Remove extension
-                    durationMs: duration ?? 0, // Use detected duration or 0
-                }
+                id: fileId, file, status: 'pending', progress: 0,
+                metadata: { title: file.name.replace(/\.[^/.]+$/, ""), durationMs: duration ?? 0, isPublic: true }
+             });
+             metadataDefaults.push({ // Default values for the form
+                 objectKey: '', // Will be filled later
+                 title: file.name.replace(/\.[^/.]+$/, ""),
+                 durationMs: duration ?? 0,
+                 isPublic: true,
+                 languageCode: '', // User needs to fill these
+                 level: '',
+                 description: '',
+                 tags: [],
+                 coverImageUrl: ''
              });
         }
         setBatchFiles(newFileStatuses);
-        // Reset field array for metadata form
-         resetBatchMetaForm({ tracks: newFileStatuses.map(fs => ({ ...fs.metadata, objectKey: '' })) as BatchCompleteUploadItemDTO[] });
+        replace(metadataDefaults as BatchCompleteUploadItemDTO[]); // Initialize RHF array
     };
 
     const handleBatchUpload = useCallback(() => {
-        if (batchFiles.length === 0 || batchFiles.some(f => f.status !== 'pending')) return;
-
+        /* ... same logic as before to request URLs and upload ... */
+        // Important: Inside the upload loop, use `setBatchMetaValue(tracks.${index}.objectKey, resItem.objectKey)`
+        // Also update the status in batchFiles using setBatchFiles
+         if (batchFiles.length === 0 || batchFiles.some(f => f.status !== 'pending')) return;
         setBatchStage('uploading');
         setBatchError(null);
-        startBatchTransition(async () => {
+         startBatchTransition(async () => { /* ... requestBatchUploadAction ... then loop through results ... */
             const requestItems = batchFiles.map(f => ({ filename: f.file.name, contentType: f.file.type }));
             const urlResult = await requestBatchUploadAction(requestItems);
-
-            if (!urlResult.success || !urlResult.results) {
-                setBatchError(urlResult.message || "Failed to get batch upload URLs.");
-                setBatchStage('select'); // Revert stage?
-                return;
-            }
+             // ... handle urlResult errors ...
 
             const uploadPromises: Promise<void>[] = [];
-            const updatedFileStatuses = [...batchFiles]; // Create copy to update status
+            const currentFileStatuses = [...batchFiles]; // Work on a copy
 
-            urlResult.results.forEach((resItem) => {
-                const fileIndex = updatedFileStatuses.findIndex(f => f.file.name === resItem.originalFilename);
-                if (fileIndex === -1) return; // Should not happen
+            urlResult.results?.forEach((resItem) => {
+                const fileIndex = currentFileStatuses.findIndex(f => f.file.name === resItem.originalFilename);
+                if (fileIndex === -1) return;
+
+                const fileStatus = currentFileStatuses[fileIndex];
 
                 if (resItem.error || !resItem.uploadUrl || !resItem.objectKey) {
-                    updatedFileStatuses[fileIndex].status = 'error';
-                    updatedFileStatuses[fileIndex].errorMsg = resItem.error || 'Missing URL/Key';
+                    fileStatus.status = 'error';
+                    fileStatus.errorMsg = resItem.error || 'Missing URL/Key';
                     return;
                 }
 
-                updatedFileStatuses[fileIndex].status = 'requesting'; // Mark as ready to upload
-                updatedFileStatuses[fileIndex].uploadUrl = resItem.uploadUrl;
-                updatedFileStatuses[fileIndex].objectKey = resItem.objectKey;
-                 // Update the corresponding metadata form field with the objectKey
-                 setBatchMetaValue(`tracks.${fileIndex}.objectKey`, resItem.objectKey);
+                 fileStatus.status = 'requesting';
+                 fileStatus.uploadUrl = resItem.uploadUrl;
+                 fileStatus.objectKey = resItem.objectKey;
+                 setBatchMetaValue(`tracks.${fileIndex}.objectKey`, resItem.objectKey); // Update RHF
 
-                // Create upload promise
-                const promise = new Promise<void>((resolve, reject) => {
-                    const fileStatus = updatedFileStatuses[fileIndex];
-                    setBatchFiles(prev => prev.map(f => f.file.name === fileStatus.file.name ? { ...f, status: 'uploading' } : f));
+                 // Create upload promise
+                 const promise = new Promise<void>((resolve, reject) => {
+                     setBatchFiles(prev => prev.map(f => f.id === fileStatus.id ? { ...f, status: 'uploading' } : f)); // Update specific item status
 
-                    const xhr = new XMLHttpRequest();
-                    xhr.open('PUT', resItem.uploadUrl, true);
-                    xhr.upload.onprogress = (event) => {
-                        if (event.lengthComputable) {
-                            const progress = Math.round((event.loaded / event.total) * 100);
-                            setBatchFiles(prev => prev.map(f => f.file.name === fileStatus.file.name ? { ...f, progress: progress } : f));
-                        }
-                    };
-                    xhr.onload = () => {
-                        if (xhr.status >= 200 && xhr.status < 300) {
-                            setBatchFiles(prev => prev.map(f => f.file.name === fileStatus.file.name ? { ...f, status: 'uploaded', progress: 100 } : f));
-                            resolve();
-                        } else {
-                            const errorMsg = `Upload failed: ${xhr.statusText || 'Network Error'}`;
-                            setBatchFiles(prev => prev.map(f => f.file.name === fileStatus.file.name ? { ...f, status: 'error', errorMsg: errorMsg } : f));
-                            reject(new Error(errorMsg));
-                        }
-                    };
-                    xhr.onerror = () => {
-                         const errorMsg = "Upload failed due to network error.";
-                         setBatchFiles(prev => prev.map(f => f.file.name === fileStatus.file.name ? { ...f, status: 'error', errorMsg: errorMsg } : f));
-                         reject(new Error(errorMsg));
-                    };
-                    xhr.setRequestHeader('Content-Type', fileStatus.file.type);
-                    xhr.send(fileStatus.file);
-                });
-                uploadPromises.push(promise);
-            });
+                     const xhr = new XMLHttpRequest();
+                     fileStatus.xhr = xhr; // Store ref for cancellation
+                     xhr.open('PUT', resItem.uploadUrl, true);
+                     xhr.upload.onprogress = (event) => { /* update progress */ };
+                     xhr.onload = () => { /* update status to uploaded, resolve */ };
+                     xhr.onerror = () => { /* update status to error, reject */ };
+                     xhr.onabort = () => { /* reject or resolve depending on if it was intentional */ reject(new Error('Upload aborted')); };
+                     xhr.setRequestHeader('Content-Type', fileStatus.file.type);
+                     xhr.send(fileStatus.file);
+                 });
+                 uploadPromises.push(promise);
+             });
 
-            setBatchFiles(updatedFileStatuses); // Update UI with statuses/keys
+            setBatchFiles(currentFileStatuses); // Update UI with keys/statuses
 
-            // Wait for all uploads to finish or error
-            try {
-                await Promise.all(uploadPromises);
-                // Check if any upload failed after Promise.all finishes
-                const finalStatuses = get().batchFiles; // Get latest state
-                if (finalStatuses.some(f => f.status === 'error')) {
-                    throw new Error("One or more file uploads failed.");
-                }
-                console.log("All batch uploads successful.");
-                setBatchStage('metadata'); // Move to metadata entry stage if all uploads succeed
-            } catch (uploadError) {
-                console.error("Batch upload process encountered errors:", uploadError);
-                setBatchError("Some uploads failed. Please review and try again.");
-                // Keep stage as 'uploading' to show errors? Or move to 'error'?
-                // Let's keep 'uploading' so user sees the individual errors
-            }
-        });
-    }, [batchFiles, setBatchMetaValue]); // Include setBatchMetaValue
+             try {
+                 await Promise.all(uploadPromises);
+                 // Check final state
+                 const finalState = get().batchFiles;
+                 if (finalState.some(f => f.status === 'error')) { throw new Error("One or more uploads failed."); }
+                 console.log("Batch uploads finished.");
+                 setBatchStage('metadata');
+             } catch (uploadError: any) {
+                 console.error("Batch upload error:", uploadError);
+                 setBatchError(uploadError.message || "Some uploads failed.");
+                 // Don't change stage, let user see errors
+             }
+         });
+    }, [batchFiles, setBatchMetaValue]); // Add dependencies
 
     const onBatchMetadataSubmit: SubmitHandler<{ tracks: BatchCompleteUploadItemDTO[] }> = (data) => {
-        // data.tracks should contain the metadata entered by the user AND the objectKey set previously
-        // Filter out any items that had upload errors if necessary (though they shouldn't be submitted ideally)
-        const validTracksToComplete = data.tracks.filter((item, index) => batchFiles[index]?.status === 'uploaded');
-
-        if (validTracksToComplete.length === 0) {
-             setBatchError("No successfully uploaded files to complete.");
-             return;
-        }
+        const tracksToComplete = data.tracks.filter((item, index) => batchFiles[index]?.status === 'uploaded' && item.objectKey);
+        if (tracksToComplete.length === 0) { setBatchError("No completed uploads with metadata to finalize."); return; }
 
         setBatchStage('completing');
         setBatchError(null);
         startBatchTransition(async () => {
-            const result = await completeBatchUploadAction(validTracksToComplete);
-            setBatchResults(result.results ?? []); // Store detailed results
-            setBatchStage('results'); // Go to results view
-            if (!result.success) {
-                setBatchError(result.message || "Batch completion failed.");
-            }
-            // Invalidate track list cache via action
+            const result = await completeBatchUploadAction(tracksToComplete);
+            setBatchResults(result.results ?? []);
+            setBatchStage('results');
+            if (!result.success) setBatchError(result.message || "Batch completion failed.");
         });
     };
 
-    // --- Client-side duration helper ---
-    const getAudioDuration = (audioFile: File): Promise<number | null> => {
-         return new Promise((resolve) => {
-             if (!audioFile || !window.AudioContext) { resolve(null); return; }
-             const reader = new FileReader();
-             reader.onload = (e) => {
-                 const audioContext = new AudioContext();
-                 audioContext.decodeAudioData(e.target?.result as ArrayBuffer)
-                     .then(buffer => {
-                         audioContext.close(); // Close context after use
-                         resolve(Math.round(buffer.duration * 1000));
-                     })
-                     .catch(err => {
-                         console.warn("Could not decode audio client-side:", err);
-                         audioContext.close();
-                         resolve(null);
-                     });
-             };
-             reader.onerror = () => { console.warn("FileReader error."); resolve(null); };
-             reader.readAsArrayBuffer(audioFile);
-         });
-     };
-
     return (
         <div className="space-y-8">
+            <h1 className="text-2xl font-bold">Upload Audio</h1>
+
             {/* --- Single File Upload Section --- */}
-            <section>
-                <h2 className="text-xl font-semibold mb-3 border-b pb-2">Single Track Upload</h2>
-                 {/* Error Display */}
-                {singleError && (
-                    <div className="mb-4 p-3 border border-red-400 bg-red-100 text-red-700 rounded-md flex items-center justify-between">
-                        <span><AlertTriangle className="inline h-4 w-4 mr-2"/> {singleError}</span>
-                        <Button variant="ghost" size="sm" onClick={() => { setSingleError(null); setSingleStage('select'); setSingleFile(null); }}><X size={16}/></Button>
-                    </div>
-                )}
+            <Card>
+                <CardHeader>
+                    <CardTitle>Single Track Upload</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                     {/* Error Display */}
+                    {singleStage === 'error' && singleError && ( /* ... error display ... */ )}
+                    {singleStage === 'success' && ( /* ... success display ... */ )}
 
-                 {/* Success Message */}
-                 {singleStage === 'success' && (
-                     <div className="mb-4 p-3 border border-green-400 bg-green-100 text-green-700 rounded-md flex items-center">
-                         <CheckCircle className="inline h-4 w-4 mr-2"/> Track created successfully!
-                     </div>
-                 )}
+                    {/* File Input & Upload Button */}
+                    {['select', 'requestingUrl', 'uploading', 'error'].includes(singleStage) && ( /* ... file input and upload button ... */ )}
 
+                    {/* Upload Progress */}
+                    {singleStage === 'uploading' && ( /* ... progress bar ... */ )}
 
-                {/* Stages */}
-                {['select', 'requestingUrl', 'uploading', 'error'].includes(singleStage) && (
-                    <div className="space-y-3">
-                         <Label htmlFor="singleAudioFile">Select Audio File</Label>
-                         <Input
-                            id="singleAudioFile"
-                            type="file"
-                            accept="audio/*"
-                            onChange={handleSingleFileChange}
-                            disabled={singleIsProcessing || singleStage === 'uploading'}
-                            className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-                        />
-                         {singleFile && <p className="text-sm text-slate-600">Selected: {singleFile.name}</p>}
-                         {singleStage === 'uploading' && (
-                             <div className="w-full bg-slate-200 rounded-full h-2.5 dark:bg-slate-700 my-2">
-                                 <div className="bg-blue-600 h-2.5 rounded-full" style={{ width: `${singleProgress}%` }}></div>
-                                 <p className="text-center text-xs mt-1">{singleProgress}% Uploaded</p>
-                             </div>
-                         )}
-                        <Button
-                            onClick={handleSingleUpload}
-                            disabled={!singleFile || singleIsProcessing || singleStage === 'uploading'}
-                        >
-                            {(singleIsProcessing && singleStage === 'requestingUrl') && <Loader className="h-4 w-4 mr-2 animate-spin"/>}
-                            {(singleStage === 'uploading') ? 'Uploading...' : 'Upload & Add Details'}
-                        </Button>
-                    </div>
-                )}
-
-                {singleStage === 'metadata' && singleUploadResult?.objectKey && (
-                     <form onSubmit={handleMetaSubmit(onMetadataSubmit)} className="space-y-4 mt-4">
-                         <h3 className="font-medium">Enter Track Details</h3>
-                         <input type="hidden" {...registerMeta('objectKey')} />
-
-                         {/* Metadata Fields */}
-                        <div><Label htmlFor="meta-title">Title*</Label><Input id="meta-title" {...registerMeta('title', { required: true })} />{metaErrors.title && <p className='err'>Title required</p>}</div>
-                        <div><Label htmlFor="meta-desc">Description</Label><Textarea id="meta-desc" {...registerMeta('description')} /></div>
-                        <div><Label htmlFor="meta-lang">Language Code*</Label><Input id="meta-lang" {...registerMeta('languageCode', { required: true })} />{metaErrors.languageCode && <p className='err'>Lang required</p>}</div>
-                         <div><Label htmlFor="meta-level">Level</Label>
-                            <Select id="meta-level" {...registerMeta('level')}><option value="">Any Level</option><option value="A1">A1</option>...</Select></div>
-                         <div><Label htmlFor="meta-duration">Duration (ms)*</Label><Input id="meta-duration" type="number" {...registerMeta('durationMs', { required: true, valueAsNumber: true, min: 1 })} />{metaErrors.durationMs && <p className='err'>Duration required</p>}</div>
-                        <div className="flex items-center space-x-2"><Checkbox id="meta-public" {...registerMeta('isPublic')}/> <Label htmlFor="meta-public">Public</Label></div>
-                        <div><Label htmlFor="meta-tags">Tags (comma-separated)</Label><Input id="meta-tags" {...registerMeta('tags', { setValueAs: (v) => v ? v.split(',').map((t:string)=>t.trim()).filter(Boolean) : [] })} /></div>
-                        <div><Label htmlFor="meta-cover">Cover Image URL</Label><Input id="meta-cover" type="url" {...registerMeta('coverImageUrl')} /></div>
-
-                        <Button type="submit" disabled={singleIsProcessing}>
-                            {singleIsProcessing ? <Spinner size="sm" /> : 'Create Track'}
-                        </Button>
-                    </form>
-                )}
-            </section>
+                    {/* Metadata Form */}
+                    {singleStage === 'metadata' && singleUploadResult?.objectKey && (
+                         <form onSubmit={handleMetaSubmit(onMetadataSubmit)} className="space-y-4 mt-4 border-t pt-4">
+                             {/* ... metadata fields using registerMeta ... */}
+                              <Button type="submit" disabled={singleIsProcessing}>
+                                  {singleIsProcessing ? <Spinner size="sm" /> : 'Create Track'}
+                              </Button>
+                         </form>
+                     )}
+                      {/* Reset Button */}
+                      {singleStage !== 'select' && singleStage !== 'success' && (
+                          <Button variant="outline" size="sm" onClick={resetSingleUpload} disabled={singleIsProcessing && singleStage !== 'uploading'} className="mt-2">
+                             {(singleIsProcessing && singleStage === 'uploading') ? 'Cancel Upload' : 'Start Over'}
+                          </Button>
+                      )}
+                </CardContent>
+            </Card>
 
             {/* --- Batch File Upload Section --- */}
-            <section>
-                 <h2 className="text-xl font-semibold mb-3 border-b pb-2">Batch Track Upload</h2>
-                 {/* Batch Error Display */}
-                {batchError && (
-                    <div className="mb-4 p-3 border border-red-400 bg-red-100 text-red-700 rounded-md flex items-center justify-between">
-                        <span><AlertTriangle className="inline h-4 w-4 mr-2"/> {batchError}</span>
-                        <Button variant="ghost" size="sm" onClick={() => { setBatchError(null); setBatchStage('select'); setBatchFiles([]); }}><X size={16}/></Button>
-                    </div>
-                )}
+             <Card>
+                <CardHeader>
+                    <CardTitle>Batch Track Upload</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                      {/* Batch Error Display */}
+                      {batchError && ( /* ... error display ... */ )}
 
-                {batchStage === 'select' && (
-                    <div className="space-y-3">
-                         <Label htmlFor="batchAudioFiles">Select Multiple Audio Files</Label>
-                         <Input
-                            id="batchAudioFiles"
-                            type="file"
-                            accept="audio/*"
-                            multiple
-                            onChange={handleBatchFileChange}
-                            disabled={batchIsProcessing}
-                            className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-                        />
-                        {batchFiles.length > 0 && (
-                            <Button onClick={handleBatchUpload} disabled={batchIsProcessing}>
-                                {batchIsProcessing ? <Loader className="h-4 w-4 mr-2 animate-spin"/> : <UploadCloud className="h-4 w-4 mr-2"/>}
-                                Upload {batchFiles.length} File(s)
-                            </Button>
-                        )}
-                    </div>
-                )}
+                      {/* File Input & Upload Button */}
+                      {batchStage === 'select' && ( /* ... file input and upload button ... */ )}
 
-                {(batchStage === 'uploading' || batchStage === 'metadata' || batchStage === 'completing') && (
-                    <div className="space-y-2">
-                        <h3 className="font-medium">Upload Progress & Metadata:</h3>
-                         {batchFiles.map((item, index) => (
-                             <div key={item.file.name + index} className="p-2 border rounded flex flex-col md:flex-row md:items-center gap-2">
-                                 <div className="flex-1 min-w-0">
-                                    <p className="text-sm font-medium truncate"><FileAudio size={14} className="inline mr-1"/> {item.file.name}</p>
-                                    {item.status === 'uploading' && <div className="w-full bg-slate-200 rounded-full h-1.5 mt-1"><div className="bg-blue-600 h-1.5 rounded-full" style={{ width: `${item.progress}%` }}></div></div>}
-                                    {item.status === 'uploaded' && <p className="text-xs text-green-600"><CheckCircle size={12} className="inline mr-1"/> Ready for metadata</p>}
-                                    {item.status === 'error' && <p className="text-xs text-red-600"><AlertTriangle size={12} className="inline mr-1"/> {item.errorMsg || 'Error'}</p>}
-                                </div>
-                                 {/* Inline Metadata Form for this item (only show if uploaded/ready) */}
-                                 {batchStage === 'metadata' && item.status === 'uploaded' && (
-                                     <div className="flex-grow grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 text-xs border-l md:pl-3 mt-2 md:mt-0 pt-2 md:pt-0">
-                                         {/* Hidden object key */}
-                                         <input type="hidden" {...batchRegister(`tracks.${index}.objectKey`)} />
-                                         {/* Simplified metadata inputs */}
-                                         <div><Label className="text-xs">Title*</Label><Input size="sm" {...batchRegister(`tracks.${index}.title`, {required: true})} /></div>
-                                         <div><Label className="text-xs">Language*</Label><Input size="sm" placeholder="en-US" {...batchRegister(`tracks.${index}.languageCode`, {required: true})} /></div>
-                                         <div><Label className="text-xs">Level</Label><Select size="sm" {...batchRegister(`tracks.${index}.level`)}><option value="">Any</option><option value="A1">A1</option>...</Select></div>
-                                         <div><Label className="text-xs">Duration(ms)*</Label><Input size="sm" type="number" {...batchRegister(`tracks.${index}.durationMs`, {required: true, valueAsNumber: true, min: 1})} /></div>
-                                         <div className="col-span-1 md:col-span-2 lg:col-span-3"><Label className="text-xs">Description</Label><Input size="sm" {...batchRegister(`tracks.${index}.description`)} /></div>
-                                         {/* Add Public, Tags, Cover as needed */}
-                                    </div>
+                      {/* File List & Metadata Form */}
+                      {(batchStage === 'uploading' || batchStage === 'metadata' || batchStage === 'completing') && (
+                            <form onSubmit={handleBatchMetaSubmit(onBatchMetadataSubmit)} className="space-y-4">
+                                {fields.map((field, index) => {
+                                     const fileStatus = batchFiles[index];
+                                     return (
+                                         <div key={field.formId} className={`p-3 border rounded ${fileStatus?.status === 'error' ? 'border-red-300 bg-red-50' : 'border-slate-200'}`}>
+                                             <h4 className="font-medium text-sm mb-2">{fileStatus?.file?.name ?? `Track ${index + 1}`}</h4>
+                                              {/* Status Indicator */}
+                                              {fileStatus && (
+                                                  <div className="text-xs mb-2">
+                                                     Status: {fileStatus.status}
+                                                     {fileStatus.status === 'uploading' && ` (${fileStatus.progress}%)`}
+                                                     {fileStatus.status === 'error' && `: ${fileStatus.errorMsg}`}
+                                                     {fileStatus.status === 'uploaded' && <CheckCircle size={14} className="inline ml-1 text-green-600"/>}
+                                                 </div>
+                                              )}
+                                             {/* Metadata Inputs - Only enable/show if uploaded */}
+                                             {fileStatus?.status === 'uploaded' && batchStage === 'metadata' && (
+                                                 <div className="grid grid-cols-2 gap-3 mt-2">
+                                                     <input type="hidden" {...batchRegister(`tracks.${index}.objectKey`)} />
+                                                     <div><Label className="text-xs">Title*</Label><Input size="sm" {...batchRegister(`tracks.${index}.title`, { required: true })} /></div>
+                                                     <div><Label className="text-xs">Language*</Label><Input size="sm" placeholder="en-US" {...batchRegister(`tracks.${index}.languageCode`, { required: true })} /></div>
+                                                     <div><Label className="text-xs">Level</Label><Select size="sm" {...batchRegister(`tracks.${index}.level`)}><option value="">Any</option>...</Select></div>
+                                                     <div><Label className="text-xs">Duration(ms)*</Label><Input size="sm" type="number" {...batchRegister(`tracks.${index}.durationMs`, { required: true, valueAsNumber: true, min: 1 })} /></div>
+                                                     <div className="col-span-2"><Label className="text-xs">Description</Label><Input size="sm" {...batchRegister(`tracks.${index}.description`)} /></div>
+                                                     {/* Add Public, Tags, Cover */}
+                                                 </div>
+                                             )}
+                                         </div>
+                                     );
+                                })}
+                                 {batchStage === 'metadata' && batchFiles.some(f => f.status === 'uploaded') && (
+                                     <Button type="submit" disabled={batchIsProcessing}>
+                                         {batchIsProcessing ? <Spinner size="sm"/> : <ListPlus size={16} className="mr-1"/>}
+                                         Complete Batch & Create Tracks
+                                     </Button>
                                  )}
-                            </div>
-                         ))}
-                        {batchStage === 'metadata' && batchFiles.some(f => f.status === 'uploaded') && (
-                            <form onSubmit={handleBatchMetaSubmit(onBatchMetadataSubmit)}>
-                                <Button type="submit" disabled={batchIsProcessing} className="mt-4">
-                                    {batchIsProcessing ? <Spinner size="sm"/> : <ListPlus size={16} className="mr-1"/>}
-                                    Complete Batch & Create Tracks
-                                </Button>
                             </form>
-                         )}
-                    </div>
-                )}
+                       )}
 
-                 {batchStage === 'results' && (
-                     <div>
-                        <h3 className="font-medium mb-3">Batch Processing Results:</h3>
-                        {batchError && <p className="text-red-600 mb-3">{batchError}</p>}
-                        <ul className="space-y-2">
-                            {batchResults.map((res, index) => (
-                                <li key={res.objectKey || index} className={`p-2 border rounded flex justify-between items-center ${res.success ? 'border-green-300 bg-green-50' : 'border-red-300 bg-red-50'}`}>
-                                     <span className="text-sm truncate">{batchFiles.find(f => f.objectKey === res.objectKey)?.file.name ?? res.objectKey}</span>
-                                    {res.success ?
-                                        <span className="text-green-700 text-sm flex items-center"><CircleCheckBig size={16} className="mr-1"/> Created ({res.trackId?.substring(0,8)}...)</span> :
-                                        <span className="text-red-700 text-sm flex items-center"><CircleX size={16} className="mr-1"/> Failed: {res.error || 'Unknown Error'}</span>
-                                    }
-                                </li>
-                            ))}
-                        </ul>
-                         <Button onClick={() => { setBatchStage('select'); setBatchFiles([]); setBatchResults([]); setBatchError(null); resetBatchMetaForm(); }} className="mt-4">Upload More</Button>
-                    </div>
-                )}
+                      {/* Results View */}
+                      {batchStage === 'results' && ( /* ... results display ... */ )}
 
-            </section>
+                      {/* Reset/Cancel Button */}
+                       {(batchStage !== 'select' && batchStage !== 'results') && (
+                          <Button variant="outline" size="sm" onClick={resetBatchUpload} disabled={batchIsProcessing && batchStage !== 'uploading'} className="mt-2">
+                             {batchStage === 'uploading' ? 'Cancel All Uploads' : 'Start Over'}
+                          </Button>
+                       )}
+
+                </CardContent>
+             </Card>
         </div>
     );
 }

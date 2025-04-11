@@ -6,8 +6,8 @@ import type {
     BookmarkResponseDTO,
     PlaybackProgressResponseDTO,
 } from '@repo/types'; // Use shared types
-import { buildQueryString } from '@/../_lib/utils'; // Use app-specific or shared utils
-import type { PaginationParams } from '@/../_lib/utils'; // Adjust alias
+import { buildQueryString } from '@/_lib/utils'; // Use app-specific or shared utils
+import type { PaginationParams } from '@/_lib/utils'; // Adjust alias
 
 // Define specific param types if needed, mirroring API expectations
 export interface ListProgressParams {

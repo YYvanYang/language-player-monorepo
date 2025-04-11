@@ -5,7 +5,7 @@ import { Inter as FontSans } from "next/font/google"; // Example font
 import { cn } from "@repo/utils"; // Assuming shared util
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'; // Or import SharedProvider
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools'; // Optional DevTools
-import '@/../styles/globals.css'; // Import app-specific global styles
+import '@/styles/globals.css'; // Import app-specific global styles
 
 const fontSans = FontSans({
   subsets: ["latin"],

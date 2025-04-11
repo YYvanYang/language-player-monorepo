@@ -4,11 +4,11 @@
 import React, { useEffect } from 'react';
 import { Inter as FontSans } from "next/font/google";
 import { cn } from "@repo/utils";
-import { AuthProvider } from '@/../_context/AuthContext'; // Adjust path
+import { AuthProvider } from '@/_context/AuthContext'; // Adjust path
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools'; // Optional
-import { usePlayerStore } from '@/../_stores/playerStore'; // Adjust path
-import '@/../app/globals.css'; // Adjust path for global styles
+import { usePlayerStore } from '@/_stores/playerStore'; // Adjust path
+import '@/app/globals.css'; // Adjust path for global styles
 
 const fontSans = FontSans({
   subsets: ["latin"],

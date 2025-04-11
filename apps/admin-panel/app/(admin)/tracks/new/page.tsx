@@ -3,8 +3,8 @@
 
 import React, { useState, useTransition, useCallback, ChangeEvent } from 'react';
 import { useRouter } from 'next/navigation';
-import { requestUploadAction, createTrackMetadataAction } from '@/../_actions/adminTrackActions'; // Adjust alias
-import { ResourceForm, FieldSchema } from '@/../_components/admin/ResourceForm'; // Adjust alias
+import { requestUploadAction, createTrackMetadataAction } from '@/_actions/adminTrackActions'; // Adjust alias
+import { ResourceForm, FieldSchema } from '@/_components/admin/ResourceForm'; // Adjust alias
 import { Button } from '@repo/ui';
 import { Loader, UploadCloud, CheckCircle, AlertTriangle } from 'lucide-react';
 import type { CompleteUploadRequestDTO, AudioLevel } from '@repo/types';

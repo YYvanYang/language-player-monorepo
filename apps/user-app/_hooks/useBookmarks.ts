@@ -2,9 +2,9 @@
 'use client'; // Hooks are client-side
 
 import { useQuery } from '@tanstack/react-query';
-import { listUserBookmarks } from '@/../_services/userService'; // Adjust path alias
+import { listUserBookmarks } from '@/_services/userService'; // Adjust path alias
 import type { PaginatedResponseDTO, BookmarkResponseDTO } from '@repo/types';
-import type { PaginationParams } from '@/../_lib/utils'; // Adjust path alias for PaginationParams definition
+import type { PaginationParams } from '@/_lib/utils'; // Adjust path alias for PaginationParams definition
 
 // Query key factory for bookmark queries
 export const bookmarksQueryKeys = {

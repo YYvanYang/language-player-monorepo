@@ -3,15 +3,15 @@
 
 import React, { useState, useMemo, useEffect, useTransition } from 'react';
 import Link from 'next/link';
-import { DataTable } from '@/../_components/admin/DataTable'; // Adjust path
-import { useAdminTracks } from '@/../_hooks/useAdminTracks'; // Adjust path
-import { type AdminListTracksParams } from '@/../_services/adminTrackService'; // Adjust path
+import { DataTable } from '@/_components/admin/DataTable'; // Adjust path
+import { useAdminTracks } from '@/_hooks/useAdminTracks'; // Adjust path
+import { type AdminListTracksParams } from '@/_services/adminTrackService'; // Adjust path
 import { type ColumnDef, type SortingState, type PaginationState, type ColumnFiltersState } from '@tanstack/react-table';
 import type { AudioTrackResponseDTO } from '@repo/types';
 import { Button } from '@repo/ui';
 import { Pencil, Trash2, Plus, Loader } from 'lucide-react';
 import { formatDuration } from '@repo/utils';
-import { deleteTrackAction } from '@/../_actions/adminTrackActions'; // Adjust path
+import { deleteTrackAction } from '@/_actions/adminTrackActions'; // Adjust path
 import { useQueryClient } from '@tanstack/react-query';
 
 // --- Delete Confirmation Component (Example) ---

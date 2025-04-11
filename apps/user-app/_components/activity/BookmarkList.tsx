@@ -6,9 +6,9 @@ import type { BookmarkResponseDTO } from '@repo/types';
 import { formatDuration, cn } from '@repo/utils'; // Import cn
 import { Button, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@repo/ui'; // Add Tooltip
 import { X, Loader } from 'lucide-react';
-import { deleteBookmarkAction } from '@/../_actions/userActivityActions'; // Adjust alias
+import { deleteBookmarkAction } from '@/_actions/userActivityActions'; // Adjust alias
 import { useQueryClient } from '@tanstack/react-query';
-import { useAuth } from '@/../_hooks/useAuth'; // Need user ID for invalidation
+import { useAuth } from '@/_hooks/useAuth'; // Need user ID for invalidation
 
 interface BookmarkListProps {
   bookmarks: BookmarkResponseDTO[];

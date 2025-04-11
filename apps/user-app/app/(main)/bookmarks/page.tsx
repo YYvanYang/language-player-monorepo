@@ -3,13 +3,13 @@
 
 import React, { useMemo, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { useAuth } from '@/../_hooks/useAuth';
-import { useBookmarks } from '@/../_hooks/useBookmarks';
-import { BookmarkList } from '@/../_components/activity/BookmarkList';
-import { PaginationControls } from '@/../_components/ui/PaginationControls';
-import { usePlayerStore } from '@/../_stores/playerStore';
+import { useAuth } from '@/_hooks/useAuth';
+import { useBookmarks } from '@/_hooks/useBookmarks';
+import { BookmarkList } from '@/_components/activity/BookmarkList';
+import { PaginationControls } from '@/_components/ui/PaginationControls';
+import { usePlayerStore } from '@/_stores/playerStore';
 import { Loader, BookmarkX } from 'lucide-react';
-import { DefaultLimit } from '@/../pkg/pagination/pagination';
+import { DefaultLimit } from '@/pkg/pagination/pagination';
 
 // Separate component to handle logic dependent on searchParams
 function BookmarksPageContent() {

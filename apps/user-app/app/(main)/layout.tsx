@@ -3,10 +3,10 @@
 'use client';
 
 import React from 'react';
-import { Navbar } from '@/../_components/layout/Navbar'; // Adjust alias
-import { Footer } from '@/../_components/layout/Footer'; // Adjust alias
-import { PlayerUI } from '@/../_components/player/PlayerUI'; // Adjust alias
-import { useAuth } from '@/../_hooks/useAuth'; // To conditionally render player?
+import { Navbar } from '@/_components/layout/Navbar'; // Adjust alias
+import { Footer } from '@/_components/layout/Footer'; // Adjust alias
+import { PlayerUI } from '@/_components/player/PlayerUI'; // Adjust alias
+import { useAuth } from '@/_hooks/useAuth'; // To conditionally render player?
 
 export default function MainLayout({
   children,

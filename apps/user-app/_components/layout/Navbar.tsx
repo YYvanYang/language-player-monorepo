@@ -3,8 +3,8 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useAuth } from '@/../_hooks/useAuth';
-import { logoutAction } from '@/../_actions/authActions';
+import { useAuth } from '@/_hooks/useAuth';
+import { logoutAction } from '@/_actions/authActions';
 import { Button } from '@repo/ui';
 import { User, LogOut, LogIn, UserPlus, Music, ListMusic, Bookmark } from 'lucide-react';
 import { cn } from '@repo/utils';

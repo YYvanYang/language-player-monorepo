@@ -1,11 +1,11 @@
 // apps/user-app/app/tracks/[trackId]/page.tsx
 import { notFound } from 'next/navigation';
-import { getTrackDetails } from '@/../_services/trackService'; // Adjust alias
+import { getTrackDetails } from '@/_services/trackService'; // Adjust alias
 import { formatDuration } from '@repo/utils'; // Adjust alias
 import { Metadata } from 'next';
 // Import Play button / trigger component if needed here
-import { PlayTrackButton } from '@/../_components/track/PlayTrackButton'; // Adjust alias
-import { TrackActivityClient } from '@/../_components/track/TrackActivityClient'; // NEW Client component
+import { PlayTrackButton } from '@/_components/track/PlayTrackButton'; // Adjust alias
+import { TrackActivityClient } from '@/_components/track/TrackActivityClient'; // NEW Client component
 
 interface TrackDetailPageProps {
   params: { trackId: string };

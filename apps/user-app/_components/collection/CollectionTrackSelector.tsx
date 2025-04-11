@@ -2,8 +2,8 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { useDebounce } from '@/../_hooks/useDebounce'; // Assuming you have this hook
-import { listTracks } from '@/../_services/trackService'; // Need service to search tracks
+import { useDebounce } from '@/_hooks/useDebounce'; // Assuming you have this hook
+import { listTracks } from '@/_services/trackService'; // Need service to search tracks
 import type { AudioTrackResponseDTO } from '@repo/types';
 import { Input, Checkbox, Label, Spinner } from '@repo/ui'; // Assuming Checkbox exists
 

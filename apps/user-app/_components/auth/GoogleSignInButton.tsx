@@ -4,7 +4,7 @@
 import React, { useState, useTransition, useEffect } from 'react';
 import { GoogleOAuthProvider, GoogleLogin, CredentialResponse } from '@react-oauth/google';
 import { useRouter } from 'next/navigation';
-import { googleCallbackAction } from '@/../_actions/authActions'; // Adjust path
+import { googleCallbackAction } from '@/_actions/authActions'; // Adjust path
 import { Button } from '@repo/ui'; // Use shared button for consistency
 import { Loader } from 'lucide-react'; // Example loading icon
 

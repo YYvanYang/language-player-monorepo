@@ -4,7 +4,7 @@
 import { useActionState } from 'react'; // Updated import for React 19+
 import { useFormStatus } from 'react-dom';
 import { useRouter } from 'next/navigation'; // For client-side redirect
-import { loginAction } from '@/../_actions/authActions'; // Adjust import alias
+import { loginAction } from '@/_actions/authActions'; // Adjust import alias
 import { Button } from '@repo/ui'; // Use shared UI
 import { Input } from '@repo/ui'; // Assume Input exists
 

@@ -1,6 +1,6 @@
 // apps/user-app/app/(main)/collections/new/page.tsx
 import React from 'react';
-import { CollectionForm } from '@/../_components/collection/CollectionForm'; // Adjust alias
+import { CollectionForm } from '@/_components/collection/CollectionForm'; // Adjust alias
 import Link from 'next/link';
 
 export const metadata = {

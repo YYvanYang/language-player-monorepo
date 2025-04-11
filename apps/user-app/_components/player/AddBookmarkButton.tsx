@@ -2,8 +2,8 @@
 'use client';
 
 import React, { useState, useTransition } from 'react';
-import { usePlayerStore } from '@/../_stores/playerStore'; // Adjust alias
-import { createBookmarkAction } from '@/../_actions/userActivityActions'; // Adjust alias
+import { usePlayerStore } from '@/_stores/playerStore'; // Adjust alias
+import { createBookmarkAction } from '@/_actions/userActivityActions'; // Adjust alias
 import { Button } from '@repo/ui';
 import { BookmarkPlus, Loader } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query'; // To invalidate queries

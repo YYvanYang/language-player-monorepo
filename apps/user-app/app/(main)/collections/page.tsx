@@ -1,12 +1,12 @@
 // apps/user-app/app/(main)/collections/page.tsx
 import { Suspense } from 'react';
-import { listMyCollections } from '@/../_services/collectionService'; // Adjust alias
-import { CollectionList } from '@/../_components/collection/CollectionList'; // Adjust alias
+import { listMyCollections } from '@/_services/collectionService'; // Adjust alias
+import { CollectionList } from '@/_components/collection/CollectionList'; // Adjust alias
 import Link from 'next/link';
 import { Button } from '@repo/ui'; // Adjust alias
 import { Plus } from 'lucide-react';
-import { PaginationControls } from '@/../_components/ui/PaginationControls'; // Adjust alias
-import { DefaultLimit } from '@/../pkg/pagination/pagination'; // Import default limit
+import { PaginationControls } from '@/_components/ui/PaginationControls'; // Adjust alias
+import { DefaultLimit } from '@/pkg/pagination/pagination'; // Import default limit
 
 // Define search params type for the page
 interface CollectionsPageProps {

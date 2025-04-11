@@ -2,7 +2,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { listAdminCollections, type AdminListCollectionsParams } from '@/../_services/adminCollectionService'; // Adjust path
+import { listAdminCollections, type AdminListCollectionsParams } from '@/_services/adminCollectionService'; // Adjust path
 import type { PaginatedResponseDTO, AudioCollectionResponseDTO } from '@repo/types';
 
 // Query key factory for admin collections

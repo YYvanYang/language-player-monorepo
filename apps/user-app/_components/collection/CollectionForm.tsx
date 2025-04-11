@@ -16,7 +16,7 @@ import type {
 import {
     createCollectionAction,
     updateCollectionMetadataAction,
-} from '@/../_actions/collectionActions'; // Adjust alias
+} from '@/_actions/collectionActions'; // Adjust alias
 import { cn } from '@repo/utils';
 // Remove CollectionTrackSelector import for now, handle tracks separately
 

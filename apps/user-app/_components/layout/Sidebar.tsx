@@ -4,7 +4,7 @@ import * as React from 'react';
 import { Link } from '@repo/ui'; // Use shared Link component
 
 // Placeholder for AuthContext or session hook
-// import { useAuth } from '@/../_context/AuthContext';
+// import { useAuth } from '@/_context/AuthContext';
 
 export function Sidebar() {
     // Placeholder: Fetch user status (logged in/out)

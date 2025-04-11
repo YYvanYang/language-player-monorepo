@@ -5,7 +5,7 @@ import React from 'react';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { Button } from '@repo/ui'; // Adjust alias if needed
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
-import { DefaultLimit } from '@/../pkg/pagination/pagination'; // Import default
+import { DefaultLimit } from '@/pkg/pagination/pagination'; // Import default
 
 
 interface PaginationControlsProps {

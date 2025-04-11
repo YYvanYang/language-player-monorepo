@@ -4,8 +4,8 @@
 import React from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
-import { getCollectionDetailsWithTracks } from '@/../_services/collectionService'; // Adjust alias
-import { CollectionForm } from '@/../_components/collection/CollectionForm'; // Adjust alias
+import { getCollectionDetailsWithTracks } from '@/_services/collectionService'; // Adjust alias
+import { CollectionForm } from '@/_components/collection/CollectionForm'; // Adjust alias
 import { Loader, AlertTriangle } from 'lucide-react';
 import Link from 'next/link';
 

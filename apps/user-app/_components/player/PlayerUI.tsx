@@ -2,8 +2,8 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { usePlayerStore } from '@/../_stores/playerStore'; // Adjust alias
-import { PlaybackState } from '@/../_lib/constants'; // Adjust alias
+import { usePlayerStore } from '@/_stores/playerStore'; // Adjust alias
+import { PlaybackState } from '@/_lib/constants'; // Adjust alias
 import { formatDuration } from '@repo/utils'; // Adjust alias
 import { Button } from '@repo/ui'; // Adjust alias
 import { Play, Pause, Volume2, VolumeX, SkipForward, SkipBack, Loader, AlertTriangle } from 'lucide-react';

@@ -2,10 +2,10 @@
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
 import type { AudioTrackDetailsResponseDTO } from '@repo/types';
-import { AUDIO_DURATION_THRESHOLD_MS, PlaybackState } from '@/../_lib/constants';
-import { getTrackDetails } from '@/../_services/trackService';
+import { AUDIO_DURATION_THRESHOLD_MS, PlaybackState } from '@/_lib/constants';
+import { getTrackDetails } from '@/_services/trackService';
 import { debounce } from '@repo/utils';
-import { recordProgressAction } from '@/../_actions/userActivityActions';
+import { recordProgressAction } from '@/_actions/userActivityActions';
 
 // Debounce progress recording (5 seconds)
 const debouncedRecordProgress = debounce((trackId: string, progressMs: number) => {

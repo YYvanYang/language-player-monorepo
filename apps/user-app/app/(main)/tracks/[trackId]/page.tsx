@@ -2,10 +2,10 @@
 import { Suspense } from 'react';
 import { notFound } from 'next/navigation';
 import { Metadata } from 'next';
-import { getTrackDetails } from '@/../_services/trackService'; // Adjust alias
+import { getTrackDetails } from '@/_services/trackService'; // Adjust alias
 import { formatDuration } from '@repo/utils'; // Adjust alias
-import { PlayTrackButton } from '@/../_components/track/PlayTrackButton'; // Adjust alias
-import { TrackActivityClient } from '@/../_components/track/TrackActivityClient'; // Client component for bookmarks/progress
+import { PlayTrackButton } from '@/_components/track/PlayTrackButton'; // Adjust alias
+import { TrackActivityClient } from '@/_components/track/TrackActivityClient'; // Client component for bookmarks/progress
 import { Badge } from '@repo/ui'; // Assuming shared badge
 import { WifiOff } from 'lucide-react'; // Private icon
 

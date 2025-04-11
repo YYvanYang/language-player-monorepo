@@ -3,14 +3,14 @@
 
 import React, { useState, useMemo, useEffect, useTransition } from 'react';
 import Link from 'next/link';
-import { DataTable } from '@/../_components/admin/DataTable'; // Adjust path
-import { useAdminCollections } from '@/../_hooks/useAdminCollections'; // Adjust path
-import { type AdminListCollectionsParams } from '@/../_services/adminCollectionService'; // Adjust path
+import { DataTable } from '@/_components/admin/DataTable'; // Adjust path
+import { useAdminCollections } from '@/_hooks/useAdminCollections'; // Adjust path
+import { type AdminListCollectionsParams } from '@/_services/adminCollectionService'; // Adjust path
 import { type ColumnDef, type SortingState, type PaginationState, type ColumnFiltersState } from '@tanstack/react-table';
 import type { AudioCollectionResponseDTO } from '@repo/types';
 import { Button } from '@repo/ui';
 import { Pencil, Trash2, Plus, Loader } from 'lucide-react';
-import { deleteCollectionAction } from '@/../_actions/adminCollectionActions'; // Adjust path
+import { deleteCollectionAction } from '@/_actions/adminCollectionActions'; // Adjust path
 import { useQueryClient } from '@tanstack/react-query';
 
 // --- Delete Confirmation Component (Similar to Tracks) ---

@@ -1,123 +1,94 @@
 // apps/admin-panel/app/(admin)/users/page.tsx
 'use client';
 
-import React, { useState, useMemo, useEffect } from 'react';
-import { DataTable } from '@/../_components/admin/DataTable'; // Adjust path
-import { useAdminUsers } from '@/../_hooks/useAdminUsers'; // Adjust path
+import React, { useState, useMemo } from 'react';
+import { DataTable } from '@/_components/admin/DataTable';
+import { useAdminUsers } from '@/_hooks/useAdminUsers';
+import { type AdminListUsersParams } from '@/_services/adminUserService';
 import { type ColumnDef, type SortingState, type PaginationState, type ColumnFiltersState } from '@tanstack/react-table';
 import type { UserResponseDTO } from '@repo/types';
-import { Button } from '@repo/ui';
-// import Link from 'next/link'; // Link is now inside ResourceActions
-// import { Pencil, Trash2 } from 'lucide-react'; // Icons are inside ResourceActions
-import { ResourceActions } from '@/../_components/admin/ResourceActions'; // Import the new component
-import { deleteUserAction } from '@/../_actions/adminUserActions'; // Import the delete action
-// Import toast library if using
-// import { toast } from 'react-hot-toast';
+import { ResourceActions } from '@/_components/admin/ResourceActions';
+import { deleteUserAction } from '@/_actions/adminUserActions';
+import { Badge } from '@repo/ui'; // Assuming Badge component
 
-// --- Define Columns ---
-// Memoize columns to prevent redefining on every render
+// Define Columns for Admin User Table
 const userColumns = React.useMemo((): ColumnDef<UserResponseDTO>[] => [
-    { accessorKey: 'name', header: 'Name' }, // Can add sorting toggle here if needed
+    { accessorKey: 'name', header: 'Name', enableSorting: true },
+    { accessorKey: 'email', header: 'Email', enableSorting: true },
     {
-      accessorKey: 'email',
-      header: ({ column }) => ( // Example header with sorting
-        <Button
-          variant="ghost"
-          onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-        >
-          Email
-          {/* Add Sort Icon Logic */}
-        </Button>
-      ),
+        accessorKey: 'authProvider',
+        header: 'Provider',
+        cell: ({ row }) => <Badge variant={row.original.authProvider === 'google' ? 'default' : 'secondary'}>{row.original.authProvider}</Badge>
     },
-    { accessorKey: 'authProvider', header: 'Provider'},
     {
-        accessorKey: 'createdAt',
-        header: 'Registered At',
-        cell: ({row}) => new Date(row.original.createdAt).toLocaleDateString()
+        accessorKey: 'createdAt', header: 'Registered', enableSorting: true,
+        cell: ({ row }) => new Date(row.original.createdAt).toLocaleDateString()
     },
+    // Add isAdmin or Roles column if applicable
+    // { accessorKey: 'isAdmin', header: 'Admin', cell: ({ row }) => row.original.isAdmin ? 'Yes' : 'No' },
     {
         id: 'actions',
-        header: () => <div className="text-right">Actions</div>, // Right align header
+        header: () => <div className="text-right">Actions</div>,
         cell: ({ row }) => (
             <ResourceActions
                 resourceId={row.original.id}
                 resourceName="user"
-                editPath={`/users/${row.original.id}/edit`} // Construct edit path
-                deleteAction={deleteUserAction} // Pass the server action directly
-                // Optional callbacks for notifications
-                onDeleteError={(message) => {
-                    // toast.error(`Failed to delete user: ${message || 'Unknown error'}`);
-                    alert(`Failed to delete user: ${message || 'Unknown error'}`); // Simple alert
-                }}
-                 onDeleteSuccess={() => {
-                    // toast.success(`User deleted successfully.`);
-                    alert(`User deleted successfully.`); // Simple alert
-                 }}
+                editPath={`/users/${row.original.id}/edit`} // Link to admin edit page
+                deleteAction={deleteUserAction}
+                // Add callbacks for toast notifications
             />
         ),
     },
-], []); // Empty dependency array means columns are defined once
-
+], []);
 
 export default function AdminUsersPage() {
-    // --- State for Server-Side Operations ---
-    const [sorting, setSorting] = useState<SortingState>([]);
-    const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
-    const [pagination, setPagination] = useState<PaginationState>({
-        pageIndex: 0,
-        pageSize: 15,
-    });
+    const [sorting, setSorting] = useState<SortingState>([{ id: 'createdAt', desc: true }]); // Default sort
+    const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]); // Example: Client-side filtering state
+    const [pagination, setPagination] = useState<PaginationState>({ pageIndex: 0, pageSize: 20 });
 
-    // --- Build Query Params ---
-    const queryParams = useMemo(() => {
-        const params: any = {
+    // Build query params (adapt if using server-side filtering)
+    const queryParams: AdminListUsersParams = useMemo(() => {
+         const params: AdminListUsersParams = {
             limit: pagination.pageSize,
             offset: pagination.pageIndex * pagination.pageSize,
         };
         if (sorting.length > 0) {
-            params.sortBy = sorting[0].id;
+            params.sortBy = sorting[0].id as AdminListUsersParams['sortBy']; // Cast might be needed
             params.sortDir = sorting[0].desc ? 'desc' : 'asc';
         }
-        // TODO: Map columnFilters state to backend query params
+         // Map columnFilters if server-side:
+         // const emailFilter = columnFilters.find(f => f.id === 'email');
+         // if(emailFilter) params.q = emailFilter.value as string;
         return params;
-    }, [pagination, sorting, columnFilters]);
+    }, [pagination, sorting/*, columnFilters*/]);
 
-    // --- Fetch Data ---
-    const { data: queryResponse, isLoading, isError, error, isPlaceholderData } = useAdminUsers(queryParams);
+    const { data: queryResponse, isLoading, isFetching, isError, error } = useAdminUsers(queryParams);
 
-    // --- Memoize Data/Total ---
     const tableData = useMemo(() => queryResponse?.data ?? [], [queryResponse?.data]);
     const totalUsers = useMemo(() => queryResponse?.total ?? 0, [queryResponse?.total]);
 
-    useEffect(() => {
-        if (isError) { console.error("Error fetching users:", error); }
-    }, [isError, error]);
-
     return (
         <div>
-            <div className="flex justify-between items-center mb-6">
-                <h1 className="text-2xl font-bold">Manage Users</h1>
-                {/* Optional: Add "Create User" button */}
-                 {/* <Button asChild> <Link href="/users/new">Create User</Link> </Button> */}
-            </div>
+            <h1 className="text-2xl font-bold mb-6">Manage Users</h1>
+             {/* TODO: Add Filter components based on DataTable structure */}
+             {/* <div className="mb-4"> ... filter inputs ... </div> */}
 
-             {isError && (
-                 <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">
-                     Error loading users: {error?.message}
-                 </div>
-             )}
+            {isError && ( <div className="text-red-600 mb-4">Error: {error?.message}</div> )}
 
             <DataTable
-                columns={userColumns} // Use memoized columns
+                columns={userColumns}
                 data={tableData}
                 totalItems={totalUsers}
-                // Pass isLoading AND isPlaceholderData for better loading indication during pagination
-                isLoading={isLoading || isPlaceholderData}
+                isLoading={isLoading || isFetching}
                 pagination={pagination}
                 setPagination={setPagination}
                 sorting={sorting}
                 setSorting={setSorting}
+                // Pass filter state if using client-side filtering in DataTable
+                columnFilters={columnFilters}
+                setColumnFilters={setColumnFilters}
+                // Set manualFiltering to true if filters are handled server-side via queryParams
+                // manualFiltering={true}
             />
         </div>
     );

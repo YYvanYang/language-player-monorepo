@@ -1,12 +1,12 @@
 // apps/user-app/_components/track/TrackActivityClient.tsx
 'use client';
 
-import { useAuth } from '@/../_hooks/useAuth';
-import { useTrackBookmarks } from '@/../_hooks/useBookmarks'; // Use the hook for this specific track
-// import { useTrackProgress } from '@/../_hooks/useProgress'; // If you create a hook for single track progress
-import { usePlayerStore } from '@/../_stores/playerStore';
-import { BookmarkList } from '@/../_components/activity/BookmarkList';
-import { AddBookmarkButton } from '@/../_components/player/AddBookmarkButton';
+import { useAuth } from '@/_hooks/useAuth';
+import { useTrackBookmarks } from '@/_hooks/useBookmarks'; // Use the hook for this specific track
+// import { useTrackProgress } from '@/_hooks/useProgress'; // If you create a hook for single track progress
+import { usePlayerStore } from '@/_stores/playerStore';
+import { BookmarkList } from '@/_components/activity/BookmarkList';
+import { AddBookmarkButton } from '@/_components/player/AddBookmarkButton';
 import { Loader } from 'lucide-react';
 
 interface TrackActivityClientProps {

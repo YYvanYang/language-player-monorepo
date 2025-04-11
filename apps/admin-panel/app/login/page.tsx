@@ -1,5 +1,5 @@
 // apps/admin-panel/app/login/page.tsx
-import { AdminLoginForm } from '@/../_components/auth/AdminLoginForm'; // Adjust import alias based on your tsconfig paths
+import { AdminLoginForm } from '@/_components/auth/AdminLoginForm'; // Adjust import alias based on your tsconfig paths
 
 export const metadata = { // Optional: Set page metadata
   title: 'Admin Login - AudioLang Player',

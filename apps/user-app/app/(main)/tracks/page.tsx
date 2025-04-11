@@ -4,13 +4,13 @@
 import React, { useState, useMemo, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
-import { listTracks } from '@/../_services/trackService'; // Adjust alias
-import { TrackList } from '@/../_components/track/TrackList'; // Adjust alias
+import { listTracks } from '@/_services/trackService'; // Adjust alias
+import { TrackList } from '@/_components/track/TrackList'; // Adjust alias
 import type { ListTrackQueryParams } from '@repo/types';
-import { PaginationControls } from '@/../_components/ui/PaginationControls'; // Adjust alias
+import { PaginationControls } from '@/_components/ui/PaginationControls'; // Adjust alias
 import { Input, Select } from '@repo/ui'; // Adjust alias
-import { useDebounce } from '@/../_hooks/useDebounce'; // Adjust alias
-import { DefaultLimit } from '@/../pkg/pagination/pagination';
+import { useDebounce } from '@/_hooks/useDebounce'; // Adjust alias
+import { DefaultLimit } from '@/pkg/pagination/pagination';
 
 // Define keys for react-query
 const tracksQueryKeys = {

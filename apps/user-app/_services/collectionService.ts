@@ -5,7 +5,7 @@ import type {
     PaginatedResponseDTO,
     AudioTrackResponseDTO, // Needed if GetCollectionDetails includes tracks
 } from '@repo/types'; // Use shared types
-import { buildQueryString } from '@/../_lib/utils'; // Use app-specific or shared utils
+import { buildQueryString } from '@/_lib/utils'; // Use app-specific or shared utils
 
 // Define specific param types if needed, mirroring API expectations
 export interface ListCollectionsParams {

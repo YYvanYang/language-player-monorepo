@@ -3,13 +3,13 @@
 
 import React, { useState, useEffect, useTransition, useMemo } from 'react';
 import type { AudioTrackResponseDTO } from '@repo/types';
-import { PlayTrackButton } from '@/../_components/track/PlayTrackButton';
+import { PlayTrackButton } from '@/_components/track/PlayTrackButton';
 import { Button, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@repo/ui';
 import { X, GripVertical, Loader, AlertTriangle, ListRestart } from 'lucide-react';
-import { updateCollectionTracksAction } from '@/../_actions/collectionActions';
+import { updateCollectionTracksAction } from '@/_actions/collectionActions';
 import { useQueryClient } from '@tanstack/react-query';
 import { cn } from '@repo/utils';
-import { useAuth } from '@/../_hooks/useAuth'; // For query keys
+import { useAuth } from '@/_hooks/useAuth'; // For query keys
 
 import {
   DndContext,

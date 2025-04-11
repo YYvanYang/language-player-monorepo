@@ -1,7 +1,7 @@
 // apps/user-app/_hooks/useAuth.ts
 'use client';
 import { useContext } from 'react';
-import { AuthContext, AuthContextType } from '@/../_context/AuthContext'; // Adjust path
+import { AuthContext, AuthContextType } from '@/_context/AuthContext'; // Adjust path
 
 export const useAuth = (): AuthContextType => {
   const context = useContext(AuthContext);

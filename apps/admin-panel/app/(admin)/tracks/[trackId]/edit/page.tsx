@@ -3,9 +3,9 @@
 
 import React from 'react';
 import { useParams, useRouter } from 'next/navigation'; // Use params from hook
-import { useAdminTrack } from '@/../_hooks/useAdminTracks'; // Adjust path for single track hook
-import { ResourceForm, FieldSchema } from '@/../_components/admin/ResourceForm'; // Adjust path
-import { updateTrackAction } from '@/../_actions/adminTrackActions'; // Adjust path
+import { useAdminTrack } from '@/_hooks/useAdminTracks'; // Adjust path for single track hook
+import { ResourceForm, FieldSchema } from '@/_components/admin/ResourceForm'; // Adjust path
+import { updateTrackAction } from '@/_actions/adminTrackActions'; // Adjust path
 import { Loader, AlertTriangle } from 'lucide-react';
 import type { CompleteUploadRequestDTO, AudioTrackResponseDTO } from '@repo/types'; // Import types
 

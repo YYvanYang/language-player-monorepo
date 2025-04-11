@@ -2,7 +2,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { listUsers, type AdminListUsersParams } from '@/../_services/adminUserService'; // Adjust path
+import { listUsers, type AdminListUsersParams } from '@/_services/adminUserService'; // Adjust path
 import type { PaginatedResponseDTO, UserResponseDTO } from '@repo/types';
 
 // Query key factory

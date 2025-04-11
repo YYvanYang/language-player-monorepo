@@ -5,7 +5,7 @@ import React, { useEffect } from 'react';
 import { useActionState } from 'react'; // Updated import for React 19+
 import { useFormStatus } from 'react-dom';
 import { useRouter } from 'next/navigation';
-import { adminLoginAction } from '@/../_actions/adminAuthActions'; // Adjust import alias
+import { adminLoginAction } from '@/_actions/adminAuthActions'; // Adjust import alias
 import { Button } from '@repo/ui'; // Use shared UI
 import { Input } from '@repo/ui'; // Assume Input exists
 import { Label } from '@repo/ui'; // Assume Label exists

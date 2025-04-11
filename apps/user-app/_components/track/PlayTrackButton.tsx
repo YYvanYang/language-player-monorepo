@@ -1,9 +1,9 @@
 // apps/user-app/_components/track/PlayTrackButton.tsx
 'use client';
-import { usePlayerStore } from '@/../_stores/playerStore'; // Adjust path
+import { usePlayerStore } from '@/_stores/playerStore'; // Adjust path
 import { Button } from '@repo/ui';
 import { Play, Pause, Loader } from 'lucide-react';
-import { PlaybackState } from '@/../_lib/constants'; // Adjust path
+import { PlaybackState } from '@/_lib/constants'; // Adjust path
 
 interface PlayTrackButtonProps {
   trackId: string;

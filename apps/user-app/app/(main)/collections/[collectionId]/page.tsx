@@ -3,8 +3,8 @@ import { Suspense } from 'react';
 import { notFound } from 'next/navigation';
 import { Metadata } from 'next';
 import Link from 'next/link';
-import { getCollectionDetailsWithTracks, getTracksForCollection } from '@/../_services/collectionService';
-import { CollectionTrackList } from '@/../_components/collection/CollectionTrackList';
+import { getCollectionDetailsWithTracks, getTracksForCollection } from '@/_services/collectionService';
+import { CollectionTrackList } from '@/_components/collection/CollectionTrackList';
 import { Button } from '@repo/ui';
 import { ListMusic, BookOpen, Edit, Trash2, WifiOff } from 'lucide-react';
 import { getIronSession } from 'iron-session';
@@ -12,7 +12,7 @@ import { cookies } from 'next/headers';
 import { SessionData, getUserSessionOptions } from '@repo/auth';
 import { APIError } from '@repo/api-client';
 // Import client component for delete confirmation
-// import { DeleteCollectionButton } from '@/../_components/collection/DeleteCollectionButton'; // Example
+// import { DeleteCollectionButton } from '@/_components/collection/DeleteCollectionButton'; // Example
 
 interface CollectionDetailPageProps {
     params: { collectionId: string };

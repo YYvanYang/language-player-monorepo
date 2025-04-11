@@ -2,7 +2,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { listAdminTracks, type AdminListTracksParams } from '@/../_services/adminTrackService'; // Adjust path to your admin track service
+import { listAdminTracks, type AdminListTracksParams } from '@/_services/adminTrackService'; // Adjust path to your admin track service
 import type { PaginatedResponseDTO, AudioTrackResponseDTO } from '@repo/types';
 
 // Query key factory for admin tracks
