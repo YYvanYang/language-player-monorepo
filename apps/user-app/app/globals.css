@@ -1,6 +1,6 @@
 /* apps/user-app/app/globals.css */
 /* Import shared UI base styles (which includes Tailwind import and @theme) */
-@import "@repo/ui/globals.css";
+@import "@repo/ui/src/globals.css";
 
 /* Add any user-app SPECIFIC global styles or overrides below */
 
