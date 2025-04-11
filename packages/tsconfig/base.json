@@ -1,7 +1,5 @@
-// tsconfig.base.json
 {
     "compilerOptions": {
-      // Type Checking
       "strict": true,
       "noImplicitAny": true,
       "strictNullChecks": true,
@@ -13,38 +11,32 @@
       "alwaysStrict": true,
       "noUnusedLocals": true,
       "noUnusedParameters": true,
-      "exactOptionalPropertyTypes": false, // Consider true for stricter checks later
+      "exactOptionalPropertyTypes": false,
       "noImplicitReturns": true,
       "noFallthroughCasesInSwitch": true,
-      "noUncheckedIndexedAccess": false, // Consider true for stricter checks later
+      "noUncheckedIndexedAccess": false,
       "noImplicitOverride": true,
       "noPropertyAccessFromIndexSignature": false,
   
-      // Modules
-      "module": "ESNext", // Use modern module system
-      "moduleResolution": "Bundler", // Recommended for modern TS/JS ecosystem
-      "baseUrl": ".", // Allows setting path aliases relative to root
-      "resolveJsonModule": true, // Allow importing JSON files
+      "module": "ESNext",
+      "moduleResolution": "Bundler",
+      "baseUrl": ".",
+      "resolveJsonModule": true,
   
-      // Emit
-      "noEmit": true, // Let Next.js/build tools handle transpilation/emit
-      "isolatedModules": true, // Required for Babel/SWC transpilation
+      "noEmit": true,
+      "isolatedModules": true,
   
-      // JavaScript Support
-      "allowJs": false, // Disallow JS files for stricter typing (can be enabled if needed)
-      "checkJs": false, // Don't type-check JS files if allowJs is true
+      "allowJs": false,
+      "checkJs": false,
   
-      // Interop Constraints
-      "esModuleInterop": true, // Recommended for compatibility
-      "forceConsistentCasingInFileNames": true, // Prevent OS-specific casing issues
+      "esModuleInterop": true,
+      "forceConsistentCasingInFileNames": true,
   
-      // Language and Environment
-      "target": "ES2020", // Target modern JS features
-      "lib": ["dom", "dom.iterable", "esnext"], // Include necessary libraries for web dev
-      "jsx": "preserve", // Let Next.js handle JSX transformation
+      "target": "ES2020",
+      "lib": ["dom", "dom.iterable", "esnext"],
+      "jsx": "preserve",
   
-      // Completeness
-      "skipLibCheck": true // Skip type checking of declaration files (.d.ts)
+      "skipLibCheck": true
     },
-    "exclude": ["node_modules", ".pnpm-store", "**/dist", "**/.next"] // Exclude common folders
+    "exclude": ["node_modules", ".pnpm-store", "**/dist", "**/.next"]
   }

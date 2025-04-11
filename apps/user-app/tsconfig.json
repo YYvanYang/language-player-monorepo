@@ -1,6 +1,6 @@
 // apps/user-app/tsconfig.json
 {
-  "extends": "../../tsconfig.base.json", // Extend the root base config
+  "extends": "../../packages/tsconfig/base.json", // Extend the root base config
   "compilerOptions": {
     "plugins": [{ "name": "next" }],
     "baseUrl": ".", // Set base URL for this app

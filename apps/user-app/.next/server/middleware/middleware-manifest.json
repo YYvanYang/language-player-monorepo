@@ -1,0 +1,47 @@
+{
+  "sorted_middleware": [],
+  "middleware": {
+    "/": {
+      "files": [
+        "server/edge/chunks/_e0611b7e._.js",
+        "server/edge/chunks/[root of the server]__8cde2345._.js",
+        "server/edge/chunks/apps_user-app_edge-wrapper_26349a53.js"
+      ],
+      "name": "middleware",
+      "page": "/",
+      "matchers": [
+        {
+          "regexp": "/:nextData(_next/data/[^/]{1,})?/profile/:path*{(\\\\.json)}?",
+          "originalSource": "/profile/:path*"
+        },
+        {
+          "regexp": "/:nextData(_next/data/[^/]{1,})?/collections/new{(\\\\.json)}?",
+          "originalSource": "/collections/new"
+        },
+        {
+          "regexp": "/:nextData(_next/data/[^/]{1,})?/collections/edit/:path*{(\\\\.json)}?",
+          "originalSource": "/collections/edit/:path*"
+        },
+        {
+          "regexp": "/:nextData(_next/data/[^/]{1,})?/bookmarks/:path*{(\\\\.json)}?",
+          "originalSource": "/bookmarks/:path*"
+        },
+        {
+          "regexp": "/:nextData(_next/data/[^/]{1,})?/upload{(\\\\.json)}?",
+          "originalSource": "/upload"
+        }
+      ],
+      "wasm": [],
+      "assets": [],
+      "env": {
+        "__NEXT_BUILD_ID": "development",
+        "NEXT_SERVER_ACTIONS_ENCRYPTION_KEY": "XWcqz8kFv0AYzSwSs8+3gNvqjApWFcoss1WaFByz9Bg=",
+        "__NEXT_PREVIEW_MODE_ID": "6f574ba26a8638512f89e5c2c6aa0491",
+        "__NEXT_PREVIEW_MODE_ENCRYPTION_KEY": "1acff03290da1e57b6052ac6c70eb92d57242db9ee7db784830d730092de6150",
+        "__NEXT_PREVIEW_MODE_SIGNING_KEY": "a157aec56f57937cbf32c75e7309d06896b3e1206d7eb1f59929d44db519c820"
+      }
+    }
+  },
+  "instrumentation": null,
+  "functions": {}
+}
