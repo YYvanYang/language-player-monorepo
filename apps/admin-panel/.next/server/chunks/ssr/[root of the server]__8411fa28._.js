@@ -55,11 +55,6 @@ var __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f2e$pnpm$2f40$
     e.code = 'MODULE_NOT_FOUND';
     throw e;
 })();
-(()=>{
-    const e = new Error("Cannot find module '@/styles/globals.css'");
-    e.code = 'MODULE_NOT_FOUND';
-    throw e;
-})();
 ;
 ;
 ;

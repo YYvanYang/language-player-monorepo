@@ -15,103 +15,87 @@ var __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f2e$pnpm$2f$ne
 var __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f2e$pnpm$2f$next$40$15$2e$2$2e$4_react$2d$dom$40$19$2e$1$2e$0_react$40$19$2e$1$2e$0_$5f$react$40$19$2e$1$2e$0$2f$node_modules$2f$next$2f$cache$2e$js__$5b$app$2d$rsc$5d$__$28$ecmascript$29$__ = __turbopack_context__.i("[project]/node_modules/.pnpm/next@15.2.4_react-dom@19.1.0_react@19.1.0__react@19.1.0/node_modules/next/cache.js [app-rsc] (ecmascript)");
 var __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f2e$pnpm$2f$next$40$15$2e$2$2e$4_react$2d$dom$40$19$2e$1$2e$0_react$40$19$2e$1$2e$0_$5f$react$40$19$2e$1$2e$0$2f$node_modules$2f$next$2f$dist$2f$api$2f$navigation$2e$react$2d$server$2e$js__$5b$app$2d$rsc$5d$__$28$ecmascript$29$__$3c$module__evaluation$3e$__ = __turbopack_context__.i("[project]/node_modules/.pnpm/next@15.2.4_react-dom@19.1.0_react@19.1.0__react@19.1.0/node_modules/next/dist/api/navigation.react-server.js [app-rsc] (ecmascript) <module evaluation>");
 var __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f2e$pnpm$2f$next$40$15$2e$2$2e$4_react$2d$dom$40$19$2e$1$2e$0_react$40$19$2e$1$2e$0_$5f$react$40$19$2e$1$2e$0$2f$node_modules$2f$next$2f$dist$2f$client$2f$components$2f$navigation$2e$react$2d$server$2e$js__$5b$app$2d$rsc$5d$__$28$ecmascript$29$__ = __turbopack_context__.i("[project]/node_modules/.pnpm/next@15.2.4_react-dom@19.1.0_react@19.1.0__react@19.1.0/node_modules/next/dist/client/components/navigation.react-server.js [app-rsc] (ecmascript)");
-(()=>{
-    const e = new Error("Cannot find module '@repo/api-client'");
-    e.code = 'MODULE_NOT_FOUND';
-    throw e;
-})();
 var __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f2e$pnpm$2f$next$40$15$2e$2$2e$4_react$2d$dom$40$19$2e$1$2e$0_react$40$19$2e$1$2e$0_$5f$react$40$19$2e$1$2e$0$2f$node_modules$2f$next$2f$dist$2f$build$2f$webpack$2f$loaders$2f$next$2d$flight$2d$loader$2f$action$2d$validate$2e$js__$5b$app$2d$rsc$5d$__$28$ecmascript$29$__ = __turbopack_context__.i("[project]/node_modules/.pnpm/next@15.2.4_react-dom@19.1.0_react@19.1.0__react@19.1.0/node_modules/next/dist/build/webpack/loaders/next-flight-loader/action-validate.js [app-rsc] (ecmascript)");
 ;
 ;
 ;
 ;
-;
 async function /*#__TURBOPACK_DISABLE_EXPORT_MERGING__*/ adminLoginAction(previousState, formData) {
-    const email = formData.get('email');
-    const password = formData.get('password');
+    console.log("Admin Login Action Triggered (Simplified Test)");
+    // TEMPORARY: Bypass all logic and return a plain object immediately
+    return {
+        success: true,
+        message: 'Test successful!'
+    };
+/* --- Original Logic Commented Out ---
+    const email = formData.get('email') as string;
+    const password = formData.get('password') as string;
+
     // Basic server-side validation
     if (!email || !password) {
-        return {
-            success: false,
-            message: 'Email and password are required.'
-        };
+        return { success: false, message: 'Email and password are required.' };
     }
+
     try {
-        const loginData = {
-            email,
-            password
-        };
+        const loginData: LoginRequestDTO = { email, password };
+
         // 1. Call the Go backend's ADMIN login endpoint
-        // Replace '/admin/auth/login' with your actual admin login endpoint
-        const adminAuthResponse = await apiClient('/admin/auth/login', {
+        const adminAuthResponse = await apiClient<GoAdminLoginSuccessResponse>('/admin/auth/login', {
             method: 'POST',
-            body: JSON.stringify(loginData)
+            body: JSON.stringify(loginData),
         });
+
         // 2. Verify backend confirmed admin status
         if (!adminAuthResponse?.userId || !adminAuthResponse?.isAdmin) {
-            // Log this serious issue - backend didn't confirm admin status!
-            console.error(`Admin login error: Backend response missing userId or isAdmin flag for email: ${email}`);
-            return {
-                success: false,
-                message: 'Login failed: Invalid admin credentials or permissions.'
-            };
+             console.error(`Admin login error: Backend response missing userId or isAdmin flag for email: ${email}`);
+             return { success: false, message: 'Login failed: Invalid admin credentials or permissions.' };
         }
+
         // 3. Call THIS admin panel's session API route handler to set the cookie
-        // Use absolute URL if running in different environments or use env var for app URL
-        // Ensure NEXT_PUBLIC_ADMIN_APP_URL is set appropriately in your environment
-        const appUrl = process.env.NEXT_PUBLIC_ADMIN_APP_URL || 'http://localhost:3001'; // Default to common admin port if not set
-        const sessionResponse = await fetch(`${appUrl}/api/auth/session`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            // Send data needed to set the session, INCLUDING isAdmin flag
-            body: JSON.stringify({
+         const appUrl = process.env.NEXT_PUBLIC_ADMIN_APP_URL || 'http://localhost:3001';
+         const sessionResponse = await fetch(`${appUrl}/api/auth/session`, {
+             method: 'POST',
+             headers: { 'Content-Type': 'application/json' },
+             body: JSON.stringify({
                 userId: adminAuthResponse.userId,
-                isAdmin: true // We trust the backend confirmation here
-            })
-        });
-        if (!sessionResponse.ok) {
-            const errorBody = await sessionResponse.text();
-            console.error(`Admin login error: Failed to set session cookie via API route. Status: ${sessionResponse.status}, Body: ${errorBody}`);
-            throw new Error(`Failed to set session cookie (status: ${sessionResponse.status}).`);
-        }
-        // Session cookie should be set now by the Route Handler's response
+                isAdmin: true
+            }),
+         });
+
+         if (!sessionResponse.ok) {
+             const errorBody = await sessionResponse.text();
+             console.error(`Admin login error: Failed to set session cookie via API route. Status: ${sessionResponse.status}, Body: ${errorBody}`);
+             return { success: false, message: `Failed to set session cookie (status: ${sessionResponse.status}). Check admin panel server logs.` };
+         }
+
         // 4. Revalidate and prepare success state (don't redirect here)
-        (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f2e$pnpm$2f$next$40$15$2e$2$2e$4_react$2d$dom$40$19$2e$1$2e$0_react$40$19$2e$1$2e$0_$5f$react$40$19$2e$1$2e$0$2f$node_modules$2f$next$2f$cache$2e$js__$5b$app$2d$rsc$5d$__$28$ecmascript$29$__["revalidatePath"])('/', 'layout'); // Revalidate admin layout
+        revalidatePath('/', 'layout');
         console.log(`Admin user ${adminAuthResponse.userId} logged in successfully.`);
-        return {
-            success: true
-        };
+        return { success: true };
+
     } catch (error) {
         console.error("Admin Login Action Error:", error);
-        if (error instanceof APIError) {
-            // Map specific backend errors
-            if (error.status === 401) {
-                return {
-                    success: false,
-                    message: 'Invalid email or password.'
-                };
-            }
-            if (error.status === 403) {
-                return {
-                    success: false,
-                    message: 'Access denied. User is not an administrator.'
-                };
-            }
-            // General API error
-            return {
-                success: false,
-                message: `Login failed: ${error.message}`
-            };
-        }
-        // Handle fetch errors to session API or other unexpected errors
-        return {
-            success: false,
-            message: `An unexpected error occurred during login: ${error instanceof Error ? error.message : 'Unknown error'}`
+
+        const errorInfo = {
+            message: error instanceof Error ? error.message : 'Unknown error',
+            status: error instanceof APIError ? error.status : undefined,
+            code: error instanceof APIError ? error.code : undefined,
+            isApiError: error instanceof APIError
         };
+
+        if (errorInfo.isApiError) {
+            if (errorInfo.status === 401) {
+                return { success: false, message: 'Invalid email or password.' };
+            }
+            if (errorInfo.status === 403) {
+                return { success: false, message: 'Access denied. User is not an administrator.' };
+            }
+            return { success: false, message: `Login failed: ${errorInfo.message}` };
+        }
+
+        return { success: false, message: `An unexpected error occurred during login: ${errorInfo.message}` };
     }
-}
+    */ }
 async function /*#__TURBOPACK_DISABLE_EXPORT_MERGING__*/ adminLogoutAction() {
     // Call THIS admin panel's session API route handler to clear the cookie
     const appUrl = process.env.NEXT_PUBLIC_ADMIN_APP_URL || 'http://localhost:3001';

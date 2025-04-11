@@ -36,7 +36,16 @@
       "lib": ["dom", "dom.iterable", "esnext"],
       "jsx": "preserve",
   
-      "skipLibCheck": true
+      "skipLibCheck": true,
+  
+      "paths": {
+        "@repo/api-client": ["./api-client/src/index.ts"],
+        "@repo/auth": ["./auth/src/index.ts"],
+        "@repo/query-client": ["./query-client/src/index.ts"],
+        "@repo/ui": ["./ui/src/index.ts"],
+        "@repo/utils": ["./utils/src/index.ts"],
+        "@repo/types": ["./types/src/index.ts"]
+      }
     },
     "exclude": ["node_modules", ".pnpm-store", "**/dist", "**/.next"]
   }
