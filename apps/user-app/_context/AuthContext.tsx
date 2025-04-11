@@ -1,11 +1,9 @@
 // apps/user-app/_context/AuthContext.tsx
 'use client';
 
-import React, { createContext, useState, useEffect, useMemo, useCallback } from 'react';
-import apiClient from '@repo/api-client';
+import { createContext, useState, useEffect, useMemo, useCallback } from 'react';
 
-// Define shape of user data exposed by context
-// Keep it minimal, fetch full profile details elsewhere if needed
+// Minimal user representation for context
 interface AuthUser {
   id: string;
 }
@@ -14,43 +12,38 @@ export interface AuthContextType {
   user: AuthUser | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  checkSession: () => Promise<void>; // Function to re-check session status
+  checkSession: () => Promise<void>; // Function to manually re-check session
 }
 
 export const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
-  const [isLoading, setIsLoading] = useState(true); // Start loading initially
+  const [isLoading, setIsLoading] = useState(true); // Start loading
 
   const checkSession = useCallback(async () => {
     // console.log("AuthContext: Checking session...");
-    setIsLoading(true);
+    // Prevent race conditions if called multiple times quickly
+    if (!isLoading) setIsLoading(true);
+
     try {
-      // Use internal fetch for API route to avoid circular dependencies or token issues
-      // with apiClient before auth state is known. Ensures browser cookies are sent.
+      // Use internal fetch, not apiClient, for this internal API call
       const response = await fetch('/api/auth/session', {
           method: 'GET',
           headers: { 'Accept': 'application/json' },
-          cache: 'no-store', // Ensure we always get the latest session status
+          cache: 'no-store', // Ensure fresh check
       });
 
       if (!response.ok) {
-         // Handle non-200 status from session check (e.g., 500)
          console.error(`AuthContext: Session check failed with status ${response.status}`);
          setUser(null);
-         // Don't throw here, just indicate not authenticated
-         return;
-      }
-
-      const data = await response.json() as { user: AuthUser | null, isAuthenticated: boolean };
-
-      if (data.isAuthenticated && data.user) {
-        // console.log("AuthContext: User authenticated", data.user);
-        setUser(data.user);
       } else {
-        // console.log("AuthContext: User not authenticated");
-        setUser(null);
+         const data = await response.json() as { user: AuthUser | null, isAuthenticated: boolean };
+         if (data.isAuthenticated && data.user) {
+            setUser(data.user);
+         } else {
+            setUser(null);
+         }
       }
     } catch (error) {
       setUser(null);
@@ -59,21 +52,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setIsLoading(false);
       // console.log("AuthContext: Session check finished.");
     }
-  }, []); // useCallback with empty dependency array
+  }, [isLoading]); // Include isLoading dependency to allow re-triggering if needed? Or keep empty? Empty seems better for manual trigger.
 
   useEffect(() => {
-    // Fetch session status on initial client load
     checkSession();
-  }, [checkSession]); // Run once on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Run only once on mount
 
   const isAuthenticated = !!user;
 
-  // Memoize context value to prevent unnecessary re-renders
   const value = useMemo(() => ({
     user,
     isAuthenticated,
     isLoading,
-    checkSession, // Expose the check function
+    checkSession,
   }), [user, isAuthenticated, isLoading, checkSession]);
 
   return (

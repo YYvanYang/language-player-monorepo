@@ -9,8 +9,8 @@ import type {
     LoginRequestDTO,
     RegisterRequestDTO,
     GoogleCallbackRequestDTO,
-    RefreshRequestDTO, // Added type
-    LogoutRequestDTO,  // Added type
+    RefreshRequestDTO,
+    LogoutRequestDTO,
 } from '@repo/types';
 
 // Action Result Type
@@ -20,9 +20,8 @@ interface ActionResult {
     isNewUser?: boolean; // For Google callback
 }
 
-// Fetch URL Helper (Use NEXT_PUBLIC_APP_URL for internal API calls)
+// Fetch URL Helper
 function getAppUrl() {
-    // Ensure this works correctly on Vercel and locally
     const url = process.env.NEXT_PUBLIC_APP_URL || process.env.VERCEL_URL || "http://localhost:3000";
     return url.startsWith('http') ? url : `https://${url}`;
 }
@@ -35,19 +34,18 @@ async function setFrontendSession(userId: string): Promise<boolean> {
         return false;
     }
     try {
-        // Use internal fetch, not apiClient for this internal call
         const sessionResponse = await fetch(`${appUrl}/api/auth/session`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ userId: userId }),
-            cache: 'no-store', // Ensure fresh session setting
+            cache: 'no-store',
         });
         if (!sessionResponse.ok) {
             const errorBody = await sessionResponse.text();
             console.error("Auth Action: Failed to set session via API route:", sessionResponse.status, errorBody);
             return false;
         }
-        console.log("Auth Action: Frontend session cookie set successfully for user:", userId);
+        // console.log("Auth Action: Frontend session cookie set successfully for user:", userId);
         return true;
     } catch (error) {
         console.error("Auth Action: Error calling internal session API:", error);
@@ -55,20 +53,16 @@ async function setFrontendSession(userId: string): Promise<boolean> {
     }
 }
 
-// Helper to decode User ID from JWT (Simplified - REAL IMPLEMENTATION NEEDED)
-// **WARNING:** THIS IS INSECURE. IN PRODUCTION, NEVER TRUST CLIENT-SIDE DECODING.
-// The backend should ideally return the user ID or profile upon successful auth,
-// OR the frontend session API should verify the token itself before setting the session.
-// For now, we assume the backend token is trustworthy *after* successful login/register.
+// Helper to decode User ID from JWT (INSECURE - FOR DEMO ONLY)
+// WARNING: Replace with secure method (backend providing ID or session route verifying token)
 function decodeUserIdFromJwt_INSECURE_DEMO(token: string): string | null {
     try {
+        if (!token) return null;
         const parts = token.split('.');
         if (parts.length !== 3) return null;
-        const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/'))); // Base64 URL decode
-        // Look for 'sub' (subject) or a custom claim like 'uid'
-        const userId = payload.sub || payload.uid;
-        // Add basic validation (e.g., check if it looks like a UUID)
-        if (typeof userId === 'string' && userId.length > 10) { // Basic sanity check
+        const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
+        const userId = payload.sub || payload.uid; // Check common claims 'sub' or custom 'uid'
+        if (typeof userId === 'string' && userId) {
             return userId;
         }
         console.warn("Auth Action (decodeUserIdFromJwt_INSECURE_DEMO): Could not find valid user ID (sub or uid) in JWT payload:", payload);
@@ -95,9 +89,8 @@ export async function loginAction(previousState: ActionResult | null, formData: 
             body: JSON.stringify(loginData),
         });
 
-        const userId = decodeUserIdFromJwt_INSECURE_DEMO(authResponse.accessToken); // Use INSECURE demo function
+        const userId = decodeUserIdFromJwt_INSECURE_DEMO(authResponse.accessToken);
         if (!userId) {
-            console.error("Login Action: Could not determine user ID from token.");
             return { success: false, message: 'Login failed: Could not establish session (invalid token).' };
         }
 
@@ -106,9 +99,8 @@ export async function loginAction(previousState: ActionResult | null, formData: 
             return { success: false, message: 'Login failed: Could not save session state.' };
         }
 
-        // Revalidate necessary paths after login
         revalidatePath('/', 'layout');
-        // TODO: Securely store authResponse.refreshToken if implementing client-side refresh
+        // TODO: Securely handle/store authResponse.refreshToken if needed
         return { success: true };
 
     } catch (error) {
@@ -137,132 +129,103 @@ export async function registerAction(previousState: ActionResult | null, formDat
             body: JSON.stringify(registerData),
         });
 
-        const userId = decodeUserIdFromJwt_INSECURE_DEMO(authResponse.accessToken); // Use INSECURE demo function
+        const userId = decodeUserIdFromJwt_INSECURE_DEMO(authResponse.accessToken);
         if (!userId) {
-            console.error("Register Action: Could not determine user ID from token.");
             return { success: false, message: 'Registration failed: Could not establish session (invalid token).' };
         }
 
-         const sessionSet = await setFrontendSession(userId);
-         if (!sessionSet) {
+        const sessionSet = await setFrontendSession(userId);
+        if (!sessionSet) {
             return { success: false, message: 'Registration failed: Could not save session state.' };
-         }
+        }
 
-         revalidatePath('/', 'layout');
-         // TODO: Securely store authResponse.refreshToken
-         return { success: true };
+        revalidatePath('/', 'layout');
+        // TODO: Securely handle/store authResponse.refreshToken
+        return { success: true };
 
     } catch (error) {
         console.error("Register Action Error:", error);
-         if (error instanceof APIError) {
-             if (error.status === 409) { return { success: false, message: 'Email already exists.' }; }
-             if (error.status === 400) { return { success: false, message: `Invalid input: ${error.message}` }; }
-             return { success: false, message: error.message || 'Registration failed due to an API error.' };
-         }
-         return { success: false, message: 'An unexpected error occurred during registration.' };
+        if (error instanceof APIError) {
+            if (error.status === 409) { return { success: false, message: 'Email already exists.' }; }
+            if (error.status === 400) { return { success: false, message: `Invalid input: ${error.message}` }; }
+            return { success: false, message: error.message || 'Registration failed due to an API error.' };
+        }
+        return { success: false, message: 'An unexpected error occurred during registration.' };
     }
 }
 
 // Google Callback Action
 export async function googleCallbackAction(idToken: string): Promise<ActionResult> {
-     if (!idToken) { return { success: false, message: 'Google ID token is required.' }; }
+    if (!idToken) { return { success: false, message: 'Google ID token is required.' }; }
 
-     try {
-         const callbackData: GoogleCallbackRequestDTO = { idToken };
-         const authResponse = await apiClient<AuthResponseDTO>('/auth/google/callback', {
-             method: 'POST',
-             body: JSON.stringify(callbackData),
-         });
+    try {
+        const callbackData: GoogleCallbackRequestDTO = { idToken };
+        const authResponse = await apiClient<AuthResponseDTO>('/auth/google/callback', {
+            method: 'POST',
+            body: JSON.stringify(callbackData),
+        });
 
-         const userId = decodeUserIdFromJwt_INSECURE_DEMO(authResponse.accessToken); // Use INSECURE demo function
-         if (!userId) {
-             console.error("Google Callback Action: Could not determine user ID from token.");
-             return { success: false, message: 'Google Sign-In failed: Could not establish session (invalid token).' };
-         }
+        const userId = decodeUserIdFromJwt_INSECURE_DEMO(authResponse.accessToken);
+        if (!userId) {
+            return { success: false, message: 'Google Sign-In failed: Could not establish session (invalid token).' };
+        }
 
-          const sessionSet = await setFrontendSession(userId);
-         if (!sessionSet) {
+        const sessionSet = await setFrontendSession(userId);
+        if (!sessionSet) {
             return { success: false, message: 'Google Sign-In failed: Could not save session state.' };
-         }
+        }
 
-         revalidatePath('/', 'layout');
-         // TODO: Securely store authResponse.refreshToken
-         return { success: true, isNewUser: authResponse.isNewUser };
+        revalidatePath('/', 'layout');
+        // TODO: Securely handle/store authResponse.refreshToken
+        return { success: true, isNewUser: authResponse.isNewUser };
 
-     } catch (error) {
-         console.error("Google Callback Action Error:", error);
-         if (error instanceof APIError) {
-             if (error.status === 409) { return { success: false, message: 'Email already linked to another account.' }; }
-             if (error.status === 401) { return { success: false, message: 'Google authentication failed. Please try again.' }; }
-             return { success: false, message: error.message || 'Google sign-in failed due to an API error.' };
-         }
-         return { success: false, message: 'An unexpected error occurred during Google sign-in.' };
-     }
+    } catch (error) {
+        console.error("Google Callback Action Error:", error);
+        if (error instanceof APIError) {
+            if (error.status === 409) { return { success: false, message: 'Email already linked to another account.' }; }
+            if (error.status === 401) { return { success: false, message: 'Google authentication failed. Please try again.' }; }
+            return { success: false, message: error.message || 'Google sign-in failed due to an API error.' };
+        }
+        return { success: false, message: 'An unexpected error occurred during Google sign-in.' };
+    }
 }
 
 // Logout Action
 export async function logoutAction() {
-    let clearSessionApiError = false;
     const appUrl = getAppUrl();
 
     // 1. Clear the frontend session cookie (Best effort)
-    if (!appUrl) {
-        console.error("Logout Action: Cannot call internal logout API: Application URL not configured.");
-        clearSessionApiError = true;
-    } else {
-        try {
-            const response = await fetch(`${appUrl}/api/auth/session`, { method: 'DELETE', cache: 'no-store' });
-            if (!response.ok) {
-                console.error("Logout Action: Failed to clear session via API route, Status:", response.status);
-                clearSessionApiError = true;
-            }
-        } catch (error) {
-            console.error("Logout Action: Error calling internal logout API route:", error);
-            clearSessionApiError = true;
-        }
-    }
+    if (appUrl) {
+         try {
+             await fetch(`${appUrl}/api/auth/session`, { method: 'DELETE', cache: 'no-store' });
+         } catch (error) { console.error("Logout Action: Error clearing frontend session:", error); }
+    } else { console.error("Logout Action: Cannot clear session: Application URL not configured."); }
 
-    // 2. Call Backend Logout (If refresh token is available)
-    // **NOTE:** Getting the refresh token securely here is tricky.
-    // It might be stored client-side (e.g., secure httpOnly cookie managed by backend,
-    // or localStorage - less secure). If using a cookie, fetch might send it automatically.
-    // If stored elsewhere, the client needs to pass it to this action.
-    // For simplicity, we'll assume *no* refresh token is passed here,
-    // relying on backend session timeout or access token expiry.
-    // If refresh tokens ARE managed and stored securely client-side,
-    // the client would need to retrieve it and pass it to this action.
+
+    // 2. Call Backend Logout (if refresh token is securely accessible)
+    // NOTE: This part is omitted due to complexity of secure client-side token storage.
+    // Rely on session cookie removal and backend token expiry for now.
+    // console.log("Logout Action: Skipping backend /auth/logout call (requires secure refresh token handling).");
     /*
-    const refreshToken = getRefreshTokenFromSomewhereSecure(); // This is the hard part
+    const refreshToken = getSecureRefreshToken(); // Hypothetical
     if (refreshToken) {
         try {
-            const logoutData: LogoutRequestDTO = { refreshToken };
-            await apiClient<void>('/auth/logout', { method: 'POST', body: JSON.stringify(logoutData) });
-            console.log("Logout Action: Backend refresh token invalidated.");
-            // clearRefreshTokenFromSecureStorage();
-        } catch (error) {
-            console.error("Logout Action: Error calling backend /auth/logout:", error);
-            // Don't block logout if backend call fails, session cookie is cleared anyway
-        }
+            await apiClient<void>('/auth/logout', { method: 'POST', body: { refreshToken } });
+            clearSecureRefreshToken();
+        } catch (error) { console.error("Logout Action: Error calling backend /auth/logout:", error); }
     }
     */
 
     // 3. Revalidate and redirect
-    revalidatePath('/', 'layout'); // Revalidate all pages basically
-    redirect('/login'); // Force redirect to login page
+    revalidatePath('/', 'layout');
+    redirect('/login');
 }
 
-// Refresh Action (Placeholder - Requires Secure Client-Side Token Management)
-// This action is difficult to implement securely purely server-side without access
-// to the refresh token stored client-side. A common pattern involves the client:
-// 1. Detecting a 401 from apiClient on a normal request.
-// 2. Retrieving the securely stored refresh token.
-// 3. Calling a dedicated API endpoint (or this action) WITH the refresh token.
-// 4. The endpoint/action validates the refresh token, gets new tokens from backend /auth/refresh.
-// 5. The endpoint/action returns the NEW tokens to the client.
-// 6. The client stores the new tokens and retries the original failed request.
-// Implementing this robustly is beyond a simple Server Action example.
+// Refresh Action (Placeholder - Requires Secure Client-Side Token Management & Handling)
+// This action needs to be called *by client-side logic* when an API call fails with 401.
+// It returns the new tokens, which the client then needs to store.
 export async function refreshSessionAction(refreshToken: string): Promise<ActionResult & { newAccessToken?: string; newRefreshToken?: string }> {
-    console.warn("refreshSessionAction is a placeholder and requires secure client-side refresh token handling.");
+    console.warn("refreshSessionAction called - requires client-side logic to store new tokens and retry requests.");
     if (!refreshToken) {
         return { success: false, message: 'Refresh token is required.' };
     }
@@ -272,8 +235,6 @@ export async function refreshSessionAction(refreshToken: string): Promise<Action
             method: 'POST',
             body: JSON.stringify(refreshData),
         });
-        // IMPORTANT: This action returns the tokens. The *caller* (client-side logic)
-        // is responsible for storing them securely and updating the user session state.
         return {
             success: true,
             newAccessToken: authResponse.accessToken,
@@ -281,10 +242,10 @@ export async function refreshSessionAction(refreshToken: string): Promise<Action
         };
     } catch (error) {
         console.error("Refresh Action Error:", error);
+        // If refresh itself fails with 401, the refresh token is invalid/expired.
         if (error instanceof APIError && error.status === 401) {
-             // If refresh fails (invalid/expired token), trigger full logout
-             // This requires coordination with client-side logic
-             console.log("Refresh token invalid, triggering logout flow...");
+             console.log("Refresh token invalid/expired during refresh attempt.");
+             // Client-side logic should trigger full logout here.
              return { success: false, message: 'Session expired. Please log in again.' };
         }
         return { success: false, message: 'Failed to refresh session.' };

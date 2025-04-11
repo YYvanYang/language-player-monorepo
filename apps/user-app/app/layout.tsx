@@ -1,41 +1,52 @@
 // apps/user-app/app/layout.tsx
-'use client'; // Root layout likely needs to be client if providing context/store hooks
+'use client'; // Must be client component to use hooks/providers
 
-import { useEffect } from 'react'; // Need useEffect for cleanup
-import { AuthProvider } from '@/../_context/AuthContext';
-// Import SharedQueryClientProvider or setup here
+import React, { useEffect } from 'react';
+import { Inter as FontSans } from "next/font/google";
+import { cn } from "@repo/utils";
+import { AuthProvider } from '@/../_context/AuthContext'; // Adjust path
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { ReactQueryDevtools } from '@tanstack/react-query-devtools'; // Optional
 import { usePlayerStore } from '@/../_stores/playerStore'; // Adjust path
+import '@/../app/globals.css'; // Adjust path for global styles
 
-// Create queryClient instance (or import from shared package)
-const queryClient = new QueryClient({/* options */});
+const fontSans = FontSans({
+  subsets: ["latin"],
+  variable: "--font-sans",
+});
+
+// Create queryClient instance ONCE (module scope)
+const queryClient = new QueryClient({
+    defaultOptions: {
+         queries: {
+             staleTime: 5 * 60 * 1000, // 5 minutes
+             gcTime: 10 * 60 * 1000,  // 10 minutes
+             refetchOnWindowFocus: false,
+         }
+     },
+});
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
-  // Optional: Pre-initialize AudioContext on mount? Or let store do it lazily.
-  // const initAudioContext = usePlayerStore((state) => state._initAudioContext);
-  // useEffect(() => {
-  //    initAudioContext(); // Try to init early
-  // }, [initAudioContext]);
-
-  // Get cleanup function from store
+  // Get cleanup function from player store
   const playerCleanup = usePlayerStore((state) => state.cleanup);
 
   useEffect(() => {
     // Cleanup audio resources when the root layout unmounts
-    // (e.g., user navigates away completely, browser closes)
     return () => {
       playerCleanup();
     };
-  }, [playerCleanup]); // Dependency array includes cleanup function
+  }, [playerCleanup]);
 
   return (
-    <html lang="en">
-      <body>
+    <html lang="en" suppressHydrationWarning>
+      <body className={cn("min-h-screen bg-background font-sans antialiased", fontSans.variable)}>
         <QueryClientProvider client={queryClient}>
           <AuthProvider>
-             {/* No specific provider needed for Zustand usually */}
+             {/* Zustand Provider is not needed, just import the hook */}
              {children}
           </AuthProvider>
+          {/* Optional: DevTools outside AuthProvider but inside QueryClientProvider */}
+          <ReactQueryDevtools initialIsOpen={false} />
         </QueryClientProvider>
       </body>
     </html>
