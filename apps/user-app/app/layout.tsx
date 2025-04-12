@@ -1,5 +1,6 @@
 // apps/user-app/app/layout.tsx
-// Can likely remain a Server Component if just setting up context providers
+'use client';
+
 import React, { useEffect } from 'react';
 import { Inter as FontSans } from "next/font/google";
 import { cn } from "@repo/utils";

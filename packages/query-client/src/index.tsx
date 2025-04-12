@@ -1,3 +1,4 @@
+'use client';
 // packages/query-client/src/index.ts
 import React from 'react';
 import { QueryClient, QueryClientProvider, QueryCache, MutationCache } from '@tanstack/react-query';

@@ -69,6 +69,9 @@ importers:
       '@repo/auth':
         specifier: workspace:*
         version: link:../../packages/auth
+      '@repo/query-client':
+        specifier: workspace:*
+        version: link:../../packages/query-client
       '@repo/types':
         specifier: workspace:*
         version: link:../../packages/types
@@ -154,6 +157,9 @@ importers:
       '@repo/auth':
         specifier: workspace:*
         version: link:../../packages/auth
+      '@repo/query-client':
+        specifier: workspace:*
+        version: link:../../packages/query-client
       '@repo/types':
         specifier: workspace:*
         version: link:../../packages/types
