@@ -49,7 +49,7 @@ export const SharedQueryClientProvider = ({ children }: { children: React.ReactN
     <QueryClientProvider client={queryClient}>
       {children}
       {/* Add DevTools only in development environments */}
-      {process.env.NODE_ENV === 'development' && <ReactQueryDevtools initialIsOpen={false} buttonPosition="bottom-left" />}
+      {process.env.NODE_ENV === 'development' && <ReactQueryDevtools initialIsOpen={false} buttonPosition="bottom-right" />}
     </QueryClientProvider>
   );
 };
