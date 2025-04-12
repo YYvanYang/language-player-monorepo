@@ -30,7 +30,6 @@
   },
   "devDependencies": {
     "@repo/tsconfig": "workspace:*",
-    "eslint-config-custom": "workspace:*",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",

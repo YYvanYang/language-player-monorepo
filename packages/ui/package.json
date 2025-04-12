@@ -13,8 +13,6 @@
     "@repo/utils": "workspace:*",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
-    "eslint": "^9.0.0",
-    "eslint-config-custom": "workspace:*",
     "react": "^19.0.0",
     "tailwindcss": "^4.0.0",
     "typescript": "^5"

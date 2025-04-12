@@ -9,8 +9,6 @@
   },
   "devDependencies": {
     "@repo/tsconfig": "workspace:*",
-    "eslint": "^9",
-    "eslint-config-custom": "workspace:*",
     "typescript": "^5"
   },
   "dependencies": {
