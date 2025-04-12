@@ -1,9 +1,4 @@
 ---
-description: 
-globs: 
-alwaysApply: true
----
----
 description:
 globs:
 alwaysApply: true
@@ -104,4 +99,4 @@ then:
   - pattern: "export\\s+default\\s+\\[" # Matches exporting a raw array
     message: |
       [ESLint v9] Found config array exported directly (`export default [...]`). Wrap the configuration array with `defineConfig` from `eslint/config` (or `@eslint/config-helpers` for older ESLint versions) for type safety and access to features like `extends`: `import { defineConfig } from 'eslint/config'; export default defineConfig([...]);`. (See ESLint Blog & project guide `updated_eslint_config_mjs.md`)
-    file_patterns: ["**/eslint.config.mjs", "**/packages/eslint-config/index.mjs"]
+    file_patterns: ["**/eslint.config.mjs", "**/packages/eslint-config/index.mjs"] 
