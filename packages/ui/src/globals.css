@@ -1,18 +1,22 @@
 /* packages/ui/src/globals.css */
 /* Import Tailwind at the top */
-@import "tailwindcss";
+@import "tailwindcss"; /* MUST BE FIRST */
 
-/* Define shared base layers and theme using @theme */
+/* --- Dark Mode Variant Configuration --- */
+/* Tells Tailwind to apply 'dark:*' classes when the 'dark' class is present on an ancestor */
+/* Use &:where(.dark, .dark *) for maximum compatibility and low specificity */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* --- Shared Theme Definition --- */
 @theme {
-  /* Define shared CSS variables matching the old root tailwind.config.js */
-  /* Default (Light Mode) Variables */
+  /* --- Default (Light Mode) Variables --- */
   --background: 0 0% 100%;
   --foreground: 240 10% 3.9%;
   --card: 0 0% 100%;
   --card-foreground: 240 10% 3.9%;
   --popover: 0 0% 100%;
   --popover-foreground: 240 10% 3.9%;
-  --primary: 240 5.9% 10%; /* Example primary */
+  --primary: 240 5.9% 10%;
   --primary-foreground: 0 0% 98%;
   --secondary: 240 4.8% 95.9%;
   --secondary-foreground: 240 5.9% 10%;
@@ -27,14 +31,13 @@
   --ring: 240 5.9% 10%; /* Focus ring color */
   --radius: 0.5rem; /* Border radius */
 
-  /* Shared Breakpoints (for container or custom variants if needed) */
+  /* --- Shared Breakpoints (Optional) --- */
   --breakpoint-sm: 640px;
   --breakpoint-md: 768px;
   --breakpoint-lg: 1024px;
   --breakpoint-xl: 1280px;
-  /* Note: Tailwind's built-in variants (sm:, md:, etc.) use min-width by default */
 
-  /* Keyframes (if needed by utilities or components) */
+  /* --- Keyframes --- */
   @keyframes --accordion-down {
     from { height: 0px; }
     to { height: var(--radix-accordion-content-height); }
@@ -43,9 +46,22 @@
     from { height: var(--radix-accordion-content-height); }
     to { height: 0px; }
   }
+  /* --- End of @theme block --- */
+}
 
-  /* Define dark mode overrides */
-  :dark {
+/* --- Base Layer Styles & Dark Mode Variable Overrides --- */
+@layer base {
+  /* Base styles for light mode (applied to :root implicitly) */
+  * {
+    @apply border-border; /* Use CSS variable for border color */
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+
+  /* Dark Mode Variable Overrides (applied when html has .dark class) */
+  html.dark {
     --background: 240 10% 3.9%;
     --foreground: 0 0% 98%;
     --card: 240 10% 3.9%;
@@ -68,39 +84,8 @@
   }
 }
 
-/* Apply base styles if needed (optional, Tailwind handles resets) */
-@layer base {
-  * {
-    @apply border-border; /* Use CSS variable for border color */
-  }
-  body {
-    @apply bg-background text-foreground;
-    font-feature-settings: "rlig" 1, "calt" 1; /* Example font feature settings */
-  }
-}
-
-/* Define custom components or utility overrides here (optional) */
+/* Optional: Define custom component styles */
 /* @layer components { ... } */
-/* @layer utilities { ... } */
 
-/* Ensure container uses theme breakpoints if defined */
-/* This is optional as @apply is often preferred now */
-/* @layer components {
-  .container {
-    max-width: theme('screens.sm');
-    @screen md { max-width: theme('screens.md'); }
-    @screen lg { max-width: theme('screens.lg'); }
-    @screen xl { max-width: theme('screens.xl'); }
-    center: true;
-    padding-left: theme('padding.DEFAULT');
-    padding-right: theme('padding.DEFAULT');
-    @screen sm {
-        padding-left: theme('padding.sm');
-        padding-right: theme('padding.sm');
-    }
-     @screen lg {
-        padding-left: theme('padding.lg');
-        padding-right: theme('padding.lg');
-    }
-  }
-} */
+/* Optional: Define custom utility styles */
+/* @layer utilities { ... } */
