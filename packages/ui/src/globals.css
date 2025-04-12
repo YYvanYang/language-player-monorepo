@@ -1,101 +1,39 @@
 /* packages/ui/src/globals.css */
-/* Import Tailwind at the top */
-@import "tailwindcss"; /* MUST BE FIRST */
 
-/* --- Dark Mode Variant Configuration --- */
-/* Tells Tailwind to apply 'dark:*' classes when the 'dark' class is present on an ancestor */
-/* Use &:where(.dark, .dark *) for maximum compatibility and low specificity */
+/* 1. Import Tailwind FIRST */
+@import "tailwindcss";
+
+/* 2. Define Custom Variants (e.g., for dark mode) */
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* --- Shared Theme Definition --- */
-@theme {
-  /* --- Default (Light Mode) Variables --- */
-  --background: 0 0% 100%;
-  --foreground: 240 10% 3.9%;
-  --card: 0 0% 100%;
-  --card-foreground: 240 10% 3.9%;
-  --popover: 0 0% 100%;
-  --popover-foreground: 240 10% 3.9%;
-  --primary: 240 5.9% 10%;
-  --primary-foreground: 0 0% 98%;
-  --secondary: 240 4.8% 95.9%;
-  --secondary-foreground: 240 5.9% 10%;
-  --muted: 240 4.8% 95.9%;
-  --muted-foreground: 240 3.8% 46.1%;
-  --accent: 240 4.8% 95.9%;
-  --accent-foreground: 240 5.9% 10%;
-  --destructive: 0 84.2% 60.2%;
-  --destructive-foreground: 0 0% 98%;
-  --border: 240 5.9% 90%;
-  --input: 240 5.9% 90%;
-  --ring: 240 5.9% 10%; /* Focus ring color */
-  --radius: 0.5rem; /* Border radius */
+/* 3. Import the theme definitions and base styles */
+@import "./theme.css";
 
-  /* --- Shared Breakpoints (Optional) --- */
-  --breakpoint-sm: 640px;
-  --breakpoint-md: 768px;
-  --breakpoint-lg: 1024px;
-  --breakpoint-xl: 1280px;
+/*
+   4. Optional: Define custom, VARIANT-AWARE component base styles or utility classes
+      using the `@utility` directive. This replaces the common v3 practice of using
+      `@layer components` or `@layer utilities` for classes intended to work with
+      Tailwind variants (hover:, focus:, lg:, etc.).
+      Example:
+      @utility btn-primary {
+        @apply px-4 py-2 rounded bg-primary text-primary-foreground font-semibold;
+        &:hover {
+           @apply bg-primary/90; // Standard CSS pseudo-class within @utility
+        }
+      }
+      // Usage in HTML: <button class="btn-primary hover:opacity-80 lg:btn-primary">...</button>
+      // Note: Tailwind variants like `hover:` can still be applied externally to the base defined by @utility.
+*/
 
-  /* --- Keyframes --- */
-  @keyframes --accordion-down {
-    from { height: 0px; }
-    to { height: var(--radix-accordion-content-height); }
-  }
-  @keyframes --accordion-up {
-    from { height: var(--radix-accordion-content-height); }
-    to { height: 0px; }
-  }
-  /* --- End of @theme block --- */
-}
-
-/* --- 使用新的@utility指令定义自定义工具类 --- */
-@utility bg-background {
-  background-color: hsl(var(--background));
-}
-
-@utility text-foreground {
-  color: hsl(var(--foreground));
-}
-
-@utility border-border {
-  border-color: hsl(var(--border));
-}
-
-/* --- Base Layer Styles & Dark Mode Variable Overrides --- */
-@layer base {
-  /* Base styles for light mode (applied to :root implicitly) */
-  * {
-    @apply border-border; /* 使用@apply引用已定义的工具类 */
-  }
-  body {
-    @apply bg-background text-foreground; /* 使用@apply引用已定义的工具类 */
-    font-feature-settings: "rlig" 1, "calt" 1;
-  }
-
-  /* Dark Mode Variable Overrides (applied when html has .dark class) */
-  html.dark {
-    --background: 240 10% 3.9%;
-    --foreground: 0 0% 98%;
-    --card: 240 10% 3.9%;
-    --card-foreground: 0 0% 98%;
-    --popover: 240 10% 3.9%;
-    --popover-foreground: 0 0% 98%;
-    --primary: 0 0% 98%;
-    --primary-foreground: 240 5.9% 10%;
-    --secondary: 240 3.7% 15.9%;
-    --secondary-foreground: 0 0% 98%;
-    --muted: 240 3.7% 15.9%;
-    --muted-foreground: 240 5% 64.9%;
-    --accent: 240 3.7% 15.9%;
-    --accent-foreground: 0 0% 98%;
-    --destructive: 0 72.2% 50.6%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 240 3.7% 15.9%;
-    --input: 240 3.7% 15.9%;
-    --ring: 240 4.9% 83.9%;
-  }
-}
-
-/* Optional: Define custom component styles */
-/* @layer components { ... } */
+/*
+   5. Optional: Add standard CSS rules to Tailwind's layers if needed, but NOT
+      for defining variant-aware utility-like classes (use @utility for that).
+      This is less common in v4 for shared styles.
+      Example (Rarely needed here):
+      @layer components {
+        // Styles for a very specific, non-utility-like component part
+        .special-widget-container {
+          box-shadow: none; // Override some default perhaps
+        }
+      }
+*/
