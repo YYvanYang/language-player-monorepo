@@ -49,14 +49,27 @@
   /* --- End of @theme block --- */
 }
 
+/* --- 使用新的@utility指令定义自定义工具类 --- */
+@utility bg-background {
+  background-color: hsl(var(--background));
+}
+
+@utility text-foreground {
+  color: hsl(var(--foreground));
+}
+
+@utility border-border {
+  border-color: hsl(var(--border));
+}
+
 /* --- Base Layer Styles & Dark Mode Variable Overrides --- */
 @layer base {
   /* Base styles for light mode (applied to :root implicitly) */
   * {
-    @apply border-border; /* Use CSS variable for border color */
+    @apply border-border; /* 使用@apply引用已定义的工具类 */
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground; /* 使用@apply引用已定义的工具类 */
     font-feature-settings: "rlig" 1, "calt" 1;
   }
 
@@ -86,6 +99,3 @@
 
 /* Optional: Define custom component styles */
 /* @layer components { ... } */
-
-/* Optional: Define custom utility styles */
-/* @layer utilities { ... } */
