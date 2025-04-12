@@ -4,7 +4,6 @@ import eslintJs from '@eslint/js';
 import tseslint from 'typescript-eslint';
 import reactPlugin from 'eslint-plugin-react';
 import hooksPlugin from 'eslint-plugin-react-hooks';
-import tailwindPlugin from 'eslint-plugin-tailwindcss';
 import nextPlugin from '@next/eslint-plugin-next';
 import globals from 'globals';
 
@@ -51,15 +50,11 @@ export default defineConfig([
       '@typescript-eslint': tseslint,
       'react': reactPlugin,
       'react-hooks': hooksPlugin,
-      'tailwindcss': tailwindPlugin,
       '@next/next': nextPlugin,
     },
     settings: {
       react: {
         version: 'detect',
-      },
-      tailwindcss: {
-        // config: 'tailwind.config.js', // Uncomment if not standard name/location
       },
     },
     // Use extends to incorporate recommended rule sets
@@ -70,7 +65,6 @@ export default defineConfig([
       // tseslint.configs.recommended, // Spread this below instead
       reactPlugin.configs.recommended,
       hooksPlugin.configs.recommended,
-      tailwindPlugin.configs.recommended,
       nextPlugin.configs['core-web-vitals'],
     ],
     // Rules defined here will apply on top of the extended configurations
@@ -87,9 +81,6 @@ export default defineConfig([
       "react/react-in-jsx-scope": "off",
       "react/prop-types": "off",
       "react/jsx-key": "warn",
-
-      "tailwindcss/no-custom-classname": "off",
-      "tailwindcss/classnames-order": "warn",
 
       "@next/next/no-img-element": "warn",
       "@next/next/no-html-link-for-pages": "warn",

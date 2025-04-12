@@ -1,7 +1,7 @@
 ---
 description: 
 globs: 
-alwaysApply: false
+alwaysApply: true
 ---
 ---
 description:
@@ -23,7 +23,7 @@ when:
     - "**/postcss.config.mjs"
     - "**/*globals.css" # Target main global CSS files
     - "**/eslint.config.mjs" # Target ESLint flat config files
-    - "**/packages/eslint-config/index.mjs" # Target the shared ESLint config (Updated Path)
+    - "**/packages/eslint-config/index.mjs" # Target the shared ESLint config
 then:
   # --- Tailwind v4 Checks ---
   - pattern: "@tailwind\\s+base;" # Match @tailwind base directive
@@ -63,9 +63,9 @@ then:
     message: |
       [ESLint v9] Found `require('@repo/eslint-config')`. Use ESM `import eslintConfigRepo from '@repo/eslint-config';` in your `eslint.config.mjs` files. Ensure `@repo/eslint-config` exports the config array correctly (e.g., using `export default` in its `index.mjs`).
     file_patterns: ["**/eslint.config.mjs"]
-  - pattern: "\\.\\.\\.eslintConfigCustom" # Match old spread variable name (if used)
+  - pattern: "\\.\\.\\.eslintConfigRepo" # Match spreading the shared config variable name directly
     message: |
-      [ESLint v9] Found spread of `eslintConfigCustom` (or similar old name). Ensure you are importing from `@repo/eslint-config` and spreading the correct variable name (e.g., `...eslintConfigRepo`) within `defineConfig([...eslintConfigRepo, { ... }])`.
+      [ESLint v9] Found direct spreading of `eslintConfigRepo` (or similar). Prefer using `defineConfig([...eslintConfigRepo, { /* overrides */ }])` to structure your app-level `eslint.config.mjs`.
     file_patterns: ["**/eslint.config.mjs"]
   # Add check for module.exports if the shared config wasn't properly migrated
   - pattern: "module\\.exports\\s*="
