@@ -1,19 +1,19 @@
 // apps/user-app/eslint.config.mjs
-import eslintConfigCustom from '@repo/eslint-config-custom'; // Import the shared flat config array
+import { defineConfig } from 'eslint/config'; // Import the helper
+import eslintConfigRepo from '@repo/eslint-config'; // Import the shared config array
 
 /** @type {import('eslint').Linter.Config[]} */
-const eslintConfig = [
-  // Spread the shared configurations
-  ...eslintConfigCustom,
+export default defineConfig([
+  // Spread the shared configurations defined in @repo/eslint-config
+  ...eslintConfigRepo,
 
-  // Add user-app specific overrides or configurations here
-  // Example: Stricter rules for player components
+  // --- User App Specific Overrides ---
+  // Apply overrides *after* spreading the base config
+  // Example:
   // {
   //   files: ["_components/player/**/*.tsx"],
   //   rules: {
-  //       "@typescript-eslint/no-explicit-any": "error", // Make 'any' an error here
+  //       "@typescript-eslint/no-explicit-any": "error",
   //   },
   // },
-];
-
-export default eslintConfig;
+]);

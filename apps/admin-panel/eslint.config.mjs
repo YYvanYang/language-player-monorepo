@@ -1,23 +1,19 @@
 // apps/admin-panel/eslint.config.mjs
-import eslintConfigCustom from '@repo/eslint-config-custom'; // Import the shared flat config array
+import { defineConfig } from 'eslint/config'; // Import the helper
+import eslintConfigRepo from '@repo/eslint-config'; // Import the shared config array
 
 /** @type {import('eslint').Linter.Config[]} */
-const eslintConfig = [
-  // Spread the shared configurations
-  ...eslintConfigCustom,
+export default defineConfig([
+  // Spread the shared configurations defined in @repo/eslint-config
+  ...eslintConfigRepo,
 
-  // Add admin-panel specific overrides or configurations here
-  // Example: Allow console logs in admin actions
-  // {
-  //   files: ["_actions/**/*.ts"],
-  //   rules: {
-  //     "no-console": "off",
-  //   },
-  // },
-  // Example: Ignore specific admin files
-  // {
-  //   ignores: ["_components/legacy/**"],
-  // }
-];
-
-export default eslintConfig;
+  // --- Admin Panel Specific Overrides ---
+  // Apply overrides *after* spreading the base config
+  {
+    files: ["_actions/**/*.ts"],
+    rules: {
+      "no-console": "off", // Allow console.log/warn/error in admin actions
+    },
+  },
+  // Add more admin-specific rules or overrides here
+]);
