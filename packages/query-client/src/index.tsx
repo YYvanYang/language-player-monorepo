@@ -1,5 +1,5 @@
 'use client';
-// packages/query-client/src/index.ts
+// packages/query-client/src/index.tsx
 import React from 'react';
 import { QueryClient, QueryClientProvider, QueryCache, MutationCache } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';

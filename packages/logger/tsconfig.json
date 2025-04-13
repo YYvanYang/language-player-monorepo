@@ -1,0 +1,10 @@
+{
+    "extends": "../../packages/tsconfig/base.json",
+    "compilerOptions": {
+      "outDir": "dist", // Optional: If you add a build step
+      "rootDir": "src",
+      "module": "ESNext" // Ensure ESM module system
+    },
+    "include": ["src"],
+    "exclude": ["node_modules", "dist"]
+  }
