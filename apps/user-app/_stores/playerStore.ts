@@ -1,224 +1,191 @@
 // apps/user-app/_stores/playerStore.ts
-import { create } from 'zustand';
+import { create, StateCreator } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
 import type { AudioTrackDetailsResponseDTO } from '@repo/types';
-// Corrected import path assuming constants are moved or accessible
-import { PlaybackState } from '@/_lib/constants'; // Use constants
+import { PlaybackState } from '@/_lib/constants';
 import { getTrackDetails } from '@/_services/trackService';
-// Corrected import path assuming utils structure
 import { debounce } from '@repo/utils';
 import { recordProgressAction } from '@/_actions/userActivityActions';
 
-// --- State Interface ---
-interface PlayerState {
-  playbackState: PlaybackState;
-  currentTrackDetails: AudioTrackDetailsResponseDTO | null;
-  duration: number; // seconds, from audio element metadata
-  currentTime: number; // seconds, from audio element timeupdate
-  volume: number; // 0 to 1
-  isMuted: boolean;
-  error: string | null;
-  // Internal state (prefixed with _)
-  _audioContext: AudioContext | null;
-  _gainNode: GainNode | null;
-  _mediaElementSourceNode: MediaElementAudioSourceNode | null; // Source connected to the <audio> element
-  _htmlAudioElement: HTMLAudioElement | null; // Ref to the <audio> element
-  _currentTrackIdLoading: string | null; // Track which track ID is currently being loaded/processed
-  _loadTimeoutId: NodeJS.Timeout | null; // Timeout for loading state
-  _isSeeking: boolean; // Flag to manage state during seek operations
-}
+// --- Helper Functions (Private to the module) ---
+const log = (message: string, ...args: any[]) => console.log(`[PlayerStore] ${message}`, ...args);
+const warn = (message: string, ...args: any[]) => console.warn(`[PlayerStore] ${message}`, ...args);
+const errorLog = (message: string, ...args: any[]) => console.error(`[PlayerStore] ${message}`, ...args);
 
-// --- Actions Interface ---
-interface PlayerActions {
-  loadAndPlayTrack: (trackId: string) => Promise<void>;
-  play: () => void;
-  pause: () => void;
-  togglePlayPause: () => void;
-  seek: (timeSeconds: number) => void;
-  setVolume: (volume: number) => void;
-  toggleMute: () => void;
-  stop: () => void; // Full stop and unload
-  cleanup: () => void; // Cleanup audio resources on component unmount
-  _setHtmlAudioElementRef: (element: HTMLAudioElement | null) => void; // Internal action to set ref
-}
-
-// --- Initial State ---
-const initialState: PlayerState = {
-  playbackState: PlaybackState.IDLE,
-  currentTrackDetails: null,
-  duration: 0,
-  currentTime: 0,
-  volume: 0.8,
-  isMuted: false,
-  error: null,
-  _audioContext: null,
-  _gainNode: null,
-  _mediaElementSourceNode: null,
-  _htmlAudioElement: null,
-  _currentTrackIdLoading: null,
-  _loadTimeoutId: null,
-  _isSeeking: false,
-};
-
-// --- Debounced Progress Recording ---
+// Debounced Progress Recording (Shared across slices via get())
 const debouncedRecordProgress = debounce((trackId: string, progressMs: number) => {
     // console.log(`Debounced: Recording progress ${progressMs}ms for track ${trackId}`);
     if (trackId && progressMs >= 0) {
         recordProgressAction(trackId, Math.round(progressMs))
-            .then(result => { if (!result.success) console.warn("[PlayerStore] Failed to record progress via action:", result.message); })
-            .catch(err => { console.error("[PlayerStore] Error calling recordProgressAction:", err); });
+            .then(result => { if (!result.success) warn("Failed to record progress via action:", result.message); })
+            .catch(err => { errorLog("Error calling recordProgressAction:", err); });
     }
 }, 3000);
 
-// --- Store Implementation ---
-export const usePlayerStore = create(
-  immer<PlayerState & PlayerActions>((set, get) => {
 
-    // --- Internal Helper Functions ---
-    const log = (message: string, ...args: any[]) => console.log(`[PlayerStore] ${message}`, ...args);
-    const warn = (message: string, ...args: any[]) => console.warn(`[PlayerStore] ${message}`, ...args);
-    const errorLog = (message: string, ...args: any[]) => console.error(`[PlayerStore] ${message}`, ...args);
+// --- Slice Interfaces ---
 
-    const clearLoadTimeout = () => {
-        const loadTimeoutId = get()._loadTimeoutId;
-        if (loadTimeoutId) {
-            clearTimeout(loadTimeoutId);
+// 1. Core State Slice
+interface StateSlice {
+    playbackState: PlaybackState;
+    currentTrackDetails: AudioTrackDetailsResponseDTO | null;
+    duration: number; // seconds
+    currentTime: number; // seconds
+    error: string | null;
+    _isSeeking: boolean; // Flag during seek operations
+    _currentTrackIdLoading: string | null; // Track ID being loaded
+    _loadTimeoutId: NodeJS.Timeout | null; // Loading timeout
+
+    // Actions primarily modifying this slice's state
+    setPlaybackState: (state: PlaybackState) => void;
+    setError: (message: string | null, trackId?: string | null) => void;
+    setCurrentTime: (time: number) => void;
+    setDuration: (duration: number) => void;
+    setTrackDetails: (details: AudioTrackDetailsResponseDTO | null) => void;
+    setIsSeeking: (isSeeking: boolean) => void;
+    _setLoadTimeout: (timeoutId: NodeJS.Timeout | null) => void;
+    _setCurrentTrackIdLoading: (trackId: string | null) => void;
+    _clearLoadTimeout: () => void;
+}
+
+// 2. Audio Engine Slice (Refs and Listeners)
+interface AudioEngineSlice {
+    _audioContext: AudioContext | null;
+    _gainNode: GainNode | null;
+    _mediaElementSourceNode: MediaElementAudioSourceNode | null;
+    _htmlAudioElement: HTMLAudioElement | null;
+
+    // Actions
+    _setHtmlAudioElementRef: (element: HTMLAudioElement | null) => void;
+    _initAudioContextIfNeeded: () => AudioContext | null;
+    _connectMediaElementSource: () => void;
+    _disconnectMediaElementSource: () => void;
+    _applyVolumeAndMute: () => void; // Moved here as it uses gainNode
+    cleanupAudioEngine: () => void; // Specific cleanup for audio nodes/context
+}
+
+// 3. Volume Slice
+interface VolumeSlice {
+    volume: number; // 0 to 1
+    isMuted: boolean;
+    // Actions
+    setVolume: (volume: number) => void;
+    toggleMute: () => void;
+}
+
+// 4. Playback Control Slice
+interface PlaybackControlSlice {
+    // Actions
+    play: () => void;
+    pause: () => void;
+    togglePlayPause: () => void;
+    seek: (timeSeconds: number) => void;
+    stop: () => void; // Full stop and unload
+}
+
+// 5. Track Loading Slice
+interface TrackLoadingSlice {
+    // Actions
+    loadAndPlayTrack: (trackId: string) => Promise<void>;
+}
+
+// Combined Type for the Store
+type PlayerStore = StateSlice & AudioEngineSlice & VolumeSlice & PlaybackControlSlice & TrackLoadingSlice;
+
+// --- Slice Creators ---
+
+// 1. State Slice Creator
+const createStateSlice: StateCreator<PlayerStore, [["zustand/immer", never]], [], StateSlice> = (set, get) => ({
+    playbackState: PlaybackState.IDLE,
+    currentTrackDetails: null,
+    duration: 0,
+    currentTime: 0,
+    error: null,
+    _isSeeking: false,
+    _currentTrackIdLoading: null,
+    _loadTimeoutId: null,
+
+    setPlaybackState: (state) => set(draft => { draft.playbackState = state; }),
+    setError: (message, trackId) => set(draft => {
+        get()._clearLoadTimeout(); // Clear timeout on error
+        // Only set error if it pertains to the track currently being loaded/played
+        const currentTrackId = draft.currentTrackDetails?.id;
+        const loadingTrackId = draft._currentTrackIdLoading;
+        if (!trackId || loadingTrackId === trackId || currentTrackId === trackId) {
+            errorLog("Error set:", message, trackId ? `(Track: ${trackId})` : '');
+            draft.playbackState = PlaybackState.ERROR;
+            draft.error = message;
+            draft._currentTrackIdLoading = null; // Clear loading state on error
+        } else {
+            warn(`Error for track ${trackId} ignored, current loading/playing is ${loadingTrackId ?? currentTrackId}`);
+        }
+    }),
+    setCurrentTime: (time) => set(draft => { draft.currentTime = time; }),
+    setDuration: (duration) => set(draft => { draft.duration = duration; }),
+    setTrackDetails: (details) => set(draft => { draft.currentTrackDetails = details; }),
+    setIsSeeking: (isSeeking) => set(draft => { draft._isSeeking = isSeeking; }),
+    _setLoadTimeout: (timeoutId) => set(draft => { draft._loadTimeoutId = timeoutId; }),
+    _setCurrentTrackIdLoading: (trackId) => set(draft => { draft._currentTrackIdLoading = trackId; }),
+    _clearLoadTimeout: () => {
+        const timeoutId = get()._loadTimeoutId;
+        if (timeoutId) {
+            clearTimeout(timeoutId);
             set({ _loadTimeoutId: null });
         }
-    };
+    },
+});
 
-    const setError = (message: string, trackId?: string | null) => {
-        clearLoadTimeout();
-        errorLog("Error set:", message, trackId ? `(Track: ${trackId})` : '');
-        set((state) => {
-            // Only set error if it pertains to the track currently being loaded/played
-            if (!trackId || state._currentTrackIdLoading === trackId || state.currentTrackDetails?.id === trackId) {
-                state.playbackState = PlaybackState.ERROR;
-                state.error = message;
-                // Don't necessarily stop here, error might be recoverable or user might want to retry load
-                state._currentTrackIdLoading = null;
-            } else {
-                warn(`Error for track ${trackId} ignored, current loading/playing is ${state._currentTrackIdLoading ?? state.currentTrackDetails?.id}`);
-            }
-        });
-    };
-
-    // Initializes AudioContext and GainNode if needed
-    const initAudioContextIfNeeded = (): AudioContext | null => {
-        let state = get();
-        let ctx = state._audioContext;
-        if (!ctx || ctx.state === 'closed') {
-            log("Initializing AudioContext");
-            try {
-                ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-                const gainNode = ctx.createGain();
-                gainNode.connect(ctx.destination);
-                gainNode.gain.setValueAtTime(state.isMuted ? 0 : state.volume, ctx.currentTime);
-                set({ _audioContext: ctx, _gainNode: gainNode });
-                ctx = get()._audioContext; // Get updated ref
-            } catch (e) {
-                 errorLog("Failed to initialize AudioContext", e);
-                 setError("Audio playback not supported.");
-                 return null;
-            }
-        }
-        if (ctx && ctx.state === 'suspended') {
-             ctx.resume().catch(e => warn("Could not resume AudioContext (may require user gesture):", e));
-        }
-        return ctx;
-    };
-
-    // Connects the HTMLAudioElement to the WAAPI graph (Context -> Gain -> Destination)
-    const connectMediaElementSource = (state: PlayerState): MediaElementAudioSourceNode | null => {
-        if (!state._audioContext || !state._htmlAudioElement || !state._gainNode) {
-            warn("Cannot connect MediaElementSource: Context, Element, or GainNode missing.");
-            return null;
-        }
-        if (state._mediaElementSourceNode) {
-            // Already connected (or attempt was made)
-            return state._mediaElementSourceNode;
-        }
-        log("Creating and connecting MediaElementAudioSourceNode");
-        try {
-            const sourceNode = state._audioContext.createMediaElementSource(state._htmlAudioElement);
-            sourceNode.connect(state._gainNode);
-            return sourceNode; // Return the created node
-        } catch (err: any) {
-            errorLog("Failed to create MediaElementAudioSourceNode:", err);
-            // This can happen if the element's src is cross-origin without CORS headers
-            setError(`Audio source connection error: ${err.message}`);
-            return null;
-        }
-    };
-
-     // Apply volume/mute to both GainNode and HTML element
-     const applyVolumeAndMute = (state: PlayerState) => {
-         if (state._gainNode && state._audioContext && state._audioContext.state === 'running') {
-              state._gainNode.gain.setTargetAtTime(state.isMuted ? 0 : state.volume, state._audioContext.currentTime, 0.01);
-         }
-         if (state._htmlAudioElement) {
-            state._htmlAudioElement.volume = state.volume;
-            state._htmlAudioElement.muted = state.isMuted;
-         }
-    };
+// 2. Audio Engine Slice Creator
+const createAudioEngineSlice: StateCreator<PlayerStore, [["zustand/immer", never]], [], AudioEngineSlice> = (set, get) => {
 
     // --- HTML Audio Element Event Handlers ---
-    // These update the Zustand state based on the audio element's events
-    const handlePlay = () => set(state => { if (!state._isSeeking) { log("Event: play -> PLAYING"); state.playbackState = PlaybackState.PLAYING; state.error = null; } });
-    const handlePause = () => set(state => { if (state.playbackState !== PlaybackState.ENDED && state.playbackState !== PlaybackState.IDLE && state.playbackState !== PlaybackState.ERROR && !state._isSeeking) { log("Event: pause -> PAUSED"); state.playbackState = PlaybackState.PAUSED; }});
+    const handlePlay = () => { if (!get()._isSeeking) { log("Event: play -> PLAYING"); get().setPlaybackState(PlaybackState.PLAYING); get().setError(null); }};
+    const handlePause = () => { if (get().playbackState !== PlaybackState.ENDED && get().playbackState !== PlaybackState.IDLE && get().playbackState !== PlaybackState.ERROR && !get()._isSeeking) { log("Event: pause -> PAUSED"); get().setPlaybackState(PlaybackState.PAUSED); }};
     const handleEnded = () => {
         log("Event: ended -> ENDED");
-        const endedState = get();
-        const finalDuration = endedState.duration;
-        set(state => {
-            state.playbackState = PlaybackState.ENDED;
-            state.currentTime = finalDuration;
-            state._isSeeking = false;
-        });
+        const finalDuration = get().duration;
+        get().setPlaybackState(PlaybackState.ENDED);
+        get().setCurrentTime(finalDuration);
+        get().setIsSeeking(false);
         // Record final progress
-        if (endedState.currentTrackDetails?.id) {
-            debouncedRecordProgress.cancel();
-            recordProgressAction(endedState.currentTrackDetails.id, Math.floor(finalDuration * 1000))
+        const endedTrackId = get().currentTrackDetails?.id;
+        if (endedTrackId) {
+            debouncedRecordProgress.cancel(); // Cancel any pending debounced calls
+            recordProgressAction(endedTrackId, Math.floor(finalDuration * 1000))
                 .catch(err => errorLog("Error recording final progress on end:", err));
         }
     };
-    const handleWaiting = () => set(state => { if (state.playbackState === PlaybackState.PLAYING) { log("Event: waiting -> BUFFERING"); state.playbackState = PlaybackState.BUFFERING; }});
-    const handlePlaying = () => set(state => { if (state.playbackState === PlaybackState.BUFFERING || state._isSeeking) { log("Event: playing -> PLAYING"); state.playbackState = PlaybackState.PLAYING; state._isSeeking = false; }});
+    const handleWaiting = () => { if (get().playbackState === PlaybackState.PLAYING) { log("Event: waiting -> BUFFERING"); get().setPlaybackState(PlaybackState.BUFFERING); }};
+    const handlePlaying = () => { if (get().playbackState === PlaybackState.BUFFERING || get()._isSeeking) { log("Event: playing -> PLAYING"); get().setPlaybackState(PlaybackState.PLAYING); get().setIsSeeking(false); }};
     const handleLoadedMetadata = () => {
         const audioEl = get()._htmlAudioElement;
         if (audioEl) {
             log("Event: loadedmetadata");
-            set(state => { state.duration = audioEl.duration || 0; });
+            get().setDuration(audioEl.duration || 0);
         }
     };
     const handleCanPlay = () => {
         log("Event: canplay");
-        clearLoadTimeout();
-        set(state => {
-            // If we were loading this specific track, move to ready state if not already playing/paused
-            if (state._currentTrackIdLoading === state.currentTrackDetails?.id) {
-                if (state.playbackState !== PlaybackState.PLAYING && state.playbackState !== PlaybackState.PAUSED) {
-                    state.playbackState = PlaybackState.READY;
-                }
-                state._currentTrackIdLoading = null; // Mark loading complete
+        get()._clearLoadTimeout(); // Clear loading timeout
+        const state = get();
+        // If we were loading this specific track, move to ready state if not already playing/paused
+        if (state._currentTrackIdLoading === state.currentTrackDetails?.id) {
+            if (state.playbackState !== PlaybackState.PLAYING && state.playbackState !== PlaybackState.PAUSED) {
+                state.setPlaybackState(PlaybackState.READY);
             }
-            // If seeking, transition back to previous state (usually PAUSED or PLAYING via 'playing' event)
-             if (state._isSeeking) {
-                state.playbackState = state._htmlAudioElement?.paused ? PlaybackState.PAUSED : PlaybackState.PLAYING;
-                state._isSeeking = false;
-             }
-        });
+            state._setCurrentTrackIdLoading(null); // Mark loading complete
+        }
+        // If seeking, transition back to previous state (or let 'playing' handle it)
+        if (state._isSeeking) {
+            // state.setIsSeeking(false); // Handled by seeked event now
+        }
     };
     const handleTimeUpdate = () => {
         const state = get();
-        const audioEl = state._htmlAudioElement;
-        if (!audioEl || state._isSeeking || state.playbackState === PlaybackState.IDLE) return; // Ignore during seek or if idle
-
-        const htmlCurrentTime = audioEl.currentTime;
-        // Update only if time changed significantly to avoid excessive re-renders
+        if (!state._htmlAudioElement || state._isSeeking || state.playbackState === PlaybackState.IDLE) return;
+        const htmlCurrentTime = state._htmlAudioElement.currentTime;
         if (Math.abs(state.currentTime - htmlCurrentTime) > 0.05) {
-            set(draft => { draft.currentTime = htmlCurrentTime; });
-            // Debounce progress recording only when actually playing
+            state.setCurrentTime(htmlCurrentTime);
             if (state.currentTrackDetails?.id && state.playbackState === PlaybackState.PLAYING) {
                 debouncedRecordProgress(state.currentTrackDetails.id, Math.floor(htmlCurrentTime * 1000));
             }
@@ -228,10 +195,18 @@ export const usePlayerStore = create(
         const audioEl = e.target as HTMLAudioElement;
         const error = audioEl.error;
         errorLog("HTMLAudioElement error:", error?.code, error?.message);
-        setError(`Audio error: ${error?.message || `Code ${error?.code}` || 'Unknown'}`, get().currentTrackDetails?.id);
+        get().setError(`Audio error: ${error?.message || `Code ${error?.code}` || 'Unknown'}`, get().currentTrackDetails?.id);
+    };
+    const handleSeeked = () => {
+        if (get()._isSeeking) {
+            log("Event: seeked");
+            get().setIsSeeking(false);
+            // Restore state based on paused status AFTER seek completes
+            const isPaused = get()._htmlAudioElement?.paused ?? true;
+            get().setPlaybackState(isPaused ? PlaybackState.PAUSED : PlaybackState.PLAYING);
+        }
     };
 
-    // --- Attach/Detach Listeners ---
     const setupAudioElementListeners = (element: HTMLAudioElement) => {
         log("Setting up HTMLAudioElement listeners");
         element.addEventListener('play', handlePlay);
@@ -243,15 +218,7 @@ export const usePlayerStore = create(
         element.addEventListener('canplay', handleCanPlay);
         element.addEventListener('timeupdate', handleTimeUpdate);
         element.addEventListener('error', handleError);
-        // Add seeked listener to reliably exit seeking state
-        element.addEventListener('seeked', () => set(state => {
-            if (state._isSeeking) {
-                log("Event: seeked");
-                state._isSeeking = false;
-                // Restore state based on paused status AFTER seek completes
-                state.playbackState = state._htmlAudioElement?.paused ? PlaybackState.PAUSED : PlaybackState.PLAYING;
-            }
-        }));
+        element.addEventListener('seeked', handleSeeked);
     };
     const removeAudioElementListeners = (element: HTMLAudioElement) => {
         log("Removing HTMLAudioElement listeners");
@@ -264,282 +231,364 @@ export const usePlayerStore = create(
         element.removeEventListener('canplay', handleCanPlay);
         element.removeEventListener('timeupdate', handleTimeUpdate);
         element.removeEventListener('error', handleError);
-        element.removeEventListener('seeked', () => set(state => { state._isSeeking = false; }));
+        element.removeEventListener('seeked', handleSeeked);
     };
 
-    // --- Public Actions ---
-    return {
-      ...initialState,
+    const internalInitAudioContext = (): AudioContext | null => {
+        let state = get();
+        let ctx = state._audioContext;
+        if (!ctx || ctx.state === 'closed') {
+            log("Initializing AudioContext");
+            try {
+                ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+                const gainNode = ctx.createGain();
+                gainNode.connect(ctx.destination);
+                set(draft => { draft._audioContext = ctx; draft._gainNode = gainNode; });
+                get()._applyVolumeAndMute(); // Apply initial volume/mute after creation
+                ctx = get()._audioContext; // Get updated ref
+            } catch (e) {
+                 errorLog("Failed to initialize AudioContext", e);
+                 get().setError("Audio playback not supported.");
+                 return null;
+            }
+        }
+         if (ctx && ctx.state === 'suspended') {
+            ctx.resume().catch(e => warn("Could not resume AudioContext (may require user gesture):", e));
+         }
+        return ctx;
+    };
 
-      _setHtmlAudioElementRef: (element) => {
-         set(state => {
-             const previousElement = state._htmlAudioElement;
-             if (previousElement && previousElement !== element) {
-                 removeAudioElementListeners(previousElement);
-                 // Optionally disconnect source node if element changes drastically
-                 if (state._mediaElementSourceNode) {
-                      try { state._mediaElementSourceNode.disconnect(); } catch (e) {}
-                      state._mediaElementSourceNode = null;
-                 }
-             }
-             state._htmlAudioElement = element;
+    const internalConnectSource = () => {
+         const state = get();
+        if (!state._audioContext || !state._htmlAudioElement || !state._gainNode) {
+             warn("Cannot connect MediaElementSource: Context, Element, or GainNode missing."); return;
+        }
+        if (state._mediaElementSourceNode) { return; } // Already connected
+
+        log("Creating and connecting MediaElementAudioSourceNode");
+        try {
+            const sourceNode = state._audioContext.createMediaElementSource(state._htmlAudioElement);
+            sourceNode.connect(state._gainNode);
+            set(draft => { draft._mediaElementSourceNode = sourceNode; });
+        } catch (err: any) {
+            errorLog("Failed to create MediaElementAudioSourceNode:", err);
+            get().setError(`Audio source connection error: ${err.message}`);
+        }
+    };
+
+    const internalDisconnectSource = () => {
+        const sourceNode = get()._mediaElementSourceNode;
+        if (sourceNode) {
+            log("Disconnecting MediaElementAudioSourceNode");
+            try { sourceNode.disconnect(); } catch(e) { warn("Error disconnecting source node", e); }
+            set(draft => { draft._mediaElementSourceNode = null; });
+        }
+    };
+
+    const internalApplyVolumeAndMute = () => {
+        const state = get();
+        if (state._gainNode && state._audioContext && state._audioContext.state === 'running') {
+            state._gainNode.gain.setTargetAtTime(state.isMuted ? 0 : state.volume, state._audioContext.currentTime, 0.01);
+        }
+        if (state._htmlAudioElement) {
+            state._htmlAudioElement.volume = state.volume; // Keep element volume sync'd for potential direct control/fallback
+            state._htmlAudioElement.muted = state.isMuted;
+        }
+    };
+
+    return {
+        _audioContext: null,
+        _gainNode: null,
+        _mediaElementSourceNode: null,
+        _htmlAudioElement: null,
+
+        _setHtmlAudioElementRef: (element) => {
+            const previousElement = get()._htmlAudioElement;
+            if (previousElement && previousElement !== element) {
+                removeAudioElementListeners(previousElement);
+                get()._disconnectMediaElementSource();
+            }
+             set(draft => { draft._htmlAudioElement = element; });
              if (element && previousElement !== element) {
                 setupAudioElementListeners(element);
-                applyVolumeAndMute(state);
-                // Attempt connection immediately if context exists
-                 state._mediaElementSourceNode = connectMediaElementSource(state);
+                get()._applyVolumeAndMute(); // Apply current volume/mute to new element
+                get()._connectMediaElementSource(); // Attempt connection if context exists
              }
+        },
+        _initAudioContextIfNeeded: internalInitAudioContext,
+        _connectMediaElementSource: internalConnectSource,
+        _disconnectMediaElementSource: internalDisconnectSource,
+        _applyVolumeAndMute: internalApplyVolumeAndMute,
+        cleanupAudioEngine: () => {
+            log("Cleaning up Audio Engine");
+            get()._disconnectMediaElementSource();
+            const ctx = get()._audioContext;
+            if (ctx && ctx.state !== 'closed') {
+                ctx.close().then(()=>log("AudioContext closed.")).catch(e => warn("Error closing AudioContext:", e));
+            }
+             // Remove listeners from element if it exists
+             const el = get()._htmlAudioElement;
+             if (el) {
+                  removeAudioElementListeners(el);
+             }
+            set(draft => {
+                draft._audioContext = null;
+                draft._gainNode = null;
+                draft._mediaElementSourceNode = null;
+                // Keep HTMLAudioElement ref, let component unmount handle it if needed
+            });
+        },
+    };
+};
+
+// 3. Volume Slice Creator
+const createVolumeSlice: StateCreator<PlayerStore, [["zustand/immer", never]], [], VolumeSlice> = (set, get) => ({
+    volume: 0.8,
+    isMuted: false,
+    setVolume: (volume) => {
+        const newVolume = Math.max(0, Math.min(1, volume));
+        set(state => {
+            state.volume = newVolume;
+            if (newVolume > 0 && state.isMuted) { state.isMuted = false; } // Unmute if volume > 0
         });
-      },
+        get()._applyVolumeAndMute(); // Apply changes
+    },
+    toggleMute: () => {
+        set(state => { state.isMuted = !state.isMuted; });
+        get()._applyVolumeAndMute(); // Apply changes
+    },
+});
 
-      loadAndPlayTrack: async (trackId) => {
-        const state = get();
-        const currentLoadingId = state._currentTrackIdLoading;
-        const currentPlayingId = state.currentTrackDetails?.id;
-
-        if (currentLoadingId === trackId) { log(`Track ${trackId} is already loading.`); return; }
-        // If track is already loaded and ready/paused/ended, just play it
-        if (currentPlayingId === trackId && [PlaybackState.READY, PlaybackState.PAUSED, PlaybackState.ENDED].includes(state.playbackState)) {
-            log(`Track ${trackId} is loaded, calling play().`);
-            get().play();
-            return;
-        }
-        // If it's already playing, do nothing (or maybe seek to start? TBD)
-        if (currentPlayingId === trackId && state.playbackState === PlaybackState.PLAYING) {
-            log(`Track ${trackId} is already playing.`);
-            // Optionally seek to 0: get().seek(0);
-            return;
-        }
-
-        log(`Loading track: ${trackId}`);
-        get().stop(); // Stop previous track & save progress
-
-        set({
-            _currentTrackIdLoading: trackId,
-            playbackState: PlaybackState.LOADING,
-            error: null, currentTrackDetails: null, duration: 0, currentTime: 0,
-            isStreamingMode: true, // Simplified: always streaming mode now
-        });
-        clearLoadTimeout();
-        set(draft => { draft._loadTimeoutId = setTimeout(() => { /* ... loading timeout logic ... */ }, 30000); });
-
-        try {
-          const trackDetails = await getTrackDetails(trackId);
-          if (get()._currentTrackIdLoading !== trackId) { log(`Load cancelled for ${trackId} during fetch.`); return; }
-          if (!trackDetails?.playUrl) throw new Error("Track details or play URL missing.");
-
-          const trackDurationSec = trackDetails.durationMs / 1000;
-          let initialSeekTime = trackDetails.userProgressMs != null && trackDetails.userProgressMs > 0
-                                ? Math.min(trackDetails.userProgressMs / 1000, trackDurationSec) : 0;
-
-          log(`Details loaded for ${trackId}. Duration: ${trackDurationSec}s. Initial Seek: ${initialSeekTime}s`);
-
-          const audioContext = initAudioContextIfNeeded(); // Ensure context is ready
-          const audioEl = get()._htmlAudioElement;
-          if (!audioEl) throw new Error("HTMLAudioElement ref not available.");
-
-          set(state => {
-              state.currentTrackDetails = trackDetails;
-              state.duration = trackDurationSec; // Initial duration from metadata
-              state.currentTime = initialSeekTime; // Set initial time state
-              // Connect MediaElementSourceNode if needed
-              if (!state._mediaElementSourceNode && audioContext && state._gainNode) {
-                  state._mediaElementSourceNode = connectMediaElementSource(state);
-              }
-          });
-
-          // Set src, load, and handle initial seek & play
-          audioEl.src = trackDetails.playUrl;
-          audioEl.load();
-
-          // Handler to set currentTime and attempt play once ready
-          const playWhenReady = () => {
-              const currentState = get();
-              if (currentState.currentTrackDetails?.id === trackId) { // Only act if this is still the target track
-                  log(`Stream can play. Setting currentTime: ${initialSeekTime}`);
-                  audioEl.currentTime = initialSeekTime; // Set time now
-                  audioEl.play()
-                     .then(() => log("Playback started via loadAndPlayTrack."))
-                     .catch(err => {
-                         warn(`Autoplay likely blocked for track ${trackId}:`, err);
-                         // Update state to READY, user must click play
-                         set(s => { if (s.currentTrackDetails?.id === trackId) s.playbackState = PlaybackState.READY; s._currentTrackIdLoading = null; });
-                     });
-              } else {
-                   log(`Skipping play for ${trackId}, another track is active.`);
-              }
-              clearLoadTimeout(); // Clear timeout once playable
-              audioEl.removeEventListener('canplay', playWhenReady);
-              audioEl.removeEventListener('loadeddata', playWhenReady); // Use loadeddata as another trigger
-          };
-          // Use 'canplay' as the trigger, it usually fires after enough data to start
-          audioEl.addEventListener('canplay', playWhenReady, { once: true });
-          audioEl.addEventListener('loadeddata', playWhenReady, { once: true }); // Fallback
-
-        } catch (err: any) {
-          setError(`Failed to load track ${trackId}: ${err.message}`, trackId);
-        }
-      },
-
-      play: () => {
+// 4. Playback Control Slice Creator
+const createPlaybackControlSlice: StateCreator<PlayerStore, [["zustand/immer", never]], [], PlaybackControlSlice> = (set, get) => ({
+    play: () => {
         const { playbackState, _htmlAudioElement } = get();
         log(`Play action called. State: ${playbackState}`);
-
-        if (playbackState !== PlaybackState.READY && playbackState !== PlaybackState.PAUSED && playbackState !== PlaybackState.ENDED) {
+        if (![PlaybackState.READY, PlaybackState.PAUSED, PlaybackState.ENDED].includes(playbackState)) {
             warn(`Cannot play from state: ${playbackState}`); return;
         }
-        if (!_htmlAudioElement) { setError("Audio element not available."); return; }
+        if (!_htmlAudioElement) { get().setError("Audio element not available."); return; }
+        const ctx = get()._initAudioContextIfNeeded(); // Ensure context is running
+        if (!ctx) return;
 
-        // Ensure AudioContext is running (user gesture likely needed initially)
-        const ctx = initAudioContextIfNeeded();
-        if (!ctx) return; // Stop if context failed
-
-        set(state => { state.error = null; }); // Clear previous errors
-
+        get().setError(null); // Clear previous errors
         const playPromise = _htmlAudioElement.play();
         if (playPromise !== undefined) {
              playPromise.catch(err => {
                  errorLog("Error starting playback:", err);
-                 setError(`Playback failed: ${err.message}`, get().currentTrackDetails?.id);
+                 get().setError(`Playback failed: ${err.message}`, get().currentTrackDetails?.id);
              });
         }
-        // State change to PLAYING/BUFFERING is handled by element events
-      },
+    },
+    pause: () => {
+        const state = get();
+        log(`Pause action called. State: ${state.playbackState}`);
+        if (![PlaybackState.PLAYING, PlaybackState.BUFFERING].includes(state.playbackState)) return;
+        if (!state._htmlAudioElement) { warn("Cannot pause: HTML element not available."); return; }
 
-      pause: () => {
-         const state = get();
-         log(`Pause action called. State: ${state.playbackState}`);
-         if (state.playbackState !== PlaybackState.PLAYING && state.playbackState !== PlaybackState.BUFFERING) return;
-         if (!state._htmlAudioElement) { warn("Cannot pause: HTML element not available."); return; }
-
-          // Flush and record progress *before* pausing
-          debouncedRecordProgress.flush();
-          if (state.currentTrackDetails?.id) {
-              recordProgressAction(state.currentTrackDetails.id, Math.floor(state.currentTime * 1000))
-                   .catch(err => errorLog("Error recording progress on pause:", err));
-          }
-
-          state._htmlAudioElement.pause();
-          // State change to PAUSED is handled by element 'onpause' event
-      },
-
-      togglePlayPause: () => {
-         const { playbackState, _htmlAudioElement } = get();
+        // Flush and record progress *before* pausing
+        debouncedRecordProgress.flush();
+        if (state.currentTrackDetails?.id) {
+            recordProgressAction(state.currentTrackDetails.id, Math.floor(state.currentTime * 1000))
+                 .catch(err => errorLog("Error recording progress on pause:", err));
+        }
+        state._htmlAudioElement.pause();
+    },
+    togglePlayPause: () => {
+         const { playbackState } = get();
          log(`Toggle Play/Pause. Current State: ${playbackState}`);
-         if (!_htmlAudioElement) return;
-
-         if (playbackState === PlaybackState.PLAYING || playbackState === PlaybackState.BUFFERING) {
+         if ([PlaybackState.PLAYING, PlaybackState.BUFFERING].includes(playbackState)) {
              get().pause();
          } else if ([PlaybackState.PAUSED, PlaybackState.READY, PlaybackState.ENDED].includes(playbackState)) {
              get().play();
          } else {
              warn(`Toggle Play/Pause ignored in state: ${playbackState}`);
          }
-      },
+    },
+    seek: (timeSeconds) => {
+        const { duration, playbackState, _htmlAudioElement } = get();
+        log(`Seek action called. Time: ${timeSeconds}s, State: ${playbackState}`);
+        const canSeek = duration > 0 && _htmlAudioElement && playbackState !== PlaybackState.IDLE && playbackState !== PlaybackState.LOADING && playbackState !== PlaybackState.ERROR;
+        if (!canSeek) { warn(`Seek ignored in state: ${playbackState} or duration=${duration}`); return; }
 
-      seek: (timeSeconds) => {
-          const { duration, playbackState, _htmlAudioElement } = get();
-          log(`Seek action called. Time: ${timeSeconds}s, State: ${playbackState}`);
-          const canSeek = duration > 0 && _htmlAudioElement && playbackState !== PlaybackState.IDLE && playbackState !== PlaybackState.LOADING && playbackState !== PlaybackState.ERROR;
+        const seekTime = Math.max(0, Math.min(timeSeconds, duration));
+        get().setIsSeeking(true); // Set seeking flag
+        get().setCurrentTime(seekTime); // Update UI time immediately
+        get().setPlaybackState(PlaybackState.SEEKING); // Enter seeking state
 
-          if (!canSeek) { warn(`Seek ignored in state: ${playbackState} or duration=${duration}`); return; }
+        _htmlAudioElement!.currentTime = seekTime; // Set the element's time
 
-          const seekTime = Math.max(0, Math.min(timeSeconds, duration));
+        // Flush any pending progress before seek starts
+        debouncedRecordProgress.flush();
+        // Schedule recording for the new position (will be updated/flushed by timeupdate/pause/stop)
+        if (get().currentTrackDetails?.id) {
+            debouncedRecordProgress(get().currentTrackDetails!.id, Math.floor(seekTime * 1000));
+        }
+    },
+    stop: () => {
+        log("Stop action called - unloading track");
+        const state = get();
+        const currentTrackId = state.currentTrackDetails?.id;
+        const currentTimeMs = state.currentTime * 1000;
 
-          // Set seeking flag, update UI time immediately
-          set(state => { state.currentTime = seekTime; state._isSeeking = true; state.playbackState = PlaybackState.SEEKING; });
+        // Force immediate progress recording before unloading
+        debouncedRecordProgress.cancel(); // Cancel any pending debounced calls
+        if (currentTrackId && currentTimeMs >= 0) {
+            log(`Recording final progress ${Math.round(currentTimeMs)}ms on stop`);
+            recordProgressAction(currentTrackId, Math.round(currentTimeMs))
+                .catch(err => errorLog("Error recording final progress on stop:", err));
+        }
 
-           _htmlAudioElement!.currentTime = seekTime; // Set the element's time
+        get()._clearLoadTimeout();
 
-           // Final progress recorded after seek completes via 'seeked' event triggering 'timeupdate' or pause/stop
-           // Flush any pending progress before seek starts
-           debouncedRecordProgress.flush();
-           // Schedule recording for the new position
-           if (get().currentTrackDetails?.id) {
-               debouncedRecordProgress(get().currentTrackDetails!.id, Math.floor(seekTime * 1000));
-           }
-           // The 'seeked' event listener will reset _isSeeking and update playbackState
-      },
+        set(draft => {
+            const audioEl = draft._htmlAudioElement; // Cache ref before resetting
 
-      setVolume: (volume) => {
-        const newVolume = Math.max(0, Math.min(1, volume));
-         set(state => {
-             state.volume = newVolume;
-             if (newVolume > 0 && state.isMuted) { state.isMuted = false; }
-             applyVolumeAndMute(state);
-         });
-      },
+            // Reset core state properties (excluding audio engine refs for now)
+            draft.playbackState = PlaybackState.IDLE;
+            draft.currentTrackDetails = null;
+            draft.duration = 0;
+            draft.currentTime = 0;
+            draft.error = null;
+            draft._isSeeking = false;
+            draft._currentTrackIdLoading = null;
+            draft._loadTimeoutId = null; // Ensure timeout ID is cleared in state
 
-      toggleMute: () => {
-         set(state => {
-            state.isMuted = !state.isMuted;
-            applyVolumeAndMute(state);
-         });
-      },
+            // Reset HTML element state
+            if (audioEl) {
+                try {
+                    if (!audioEl.paused) audioEl.pause();
+                    audioEl.removeAttribute("src");
+                    audioEl.load(); // Force browser to release resources
+                    log("HTMLAudioElement reset on stop.");
+                } catch (e) { warn("Error resetting HTMLAudioElement on stop:", e); }
+            }
+        });
+        // Note: AudioContext and nodes are not reset here, handled by cleanupAudioEngine if component unmounts
+    },
+});
 
-      stop: () => {
-          log("Stop action called - unloading track");
-          const state = get();
-          const currentTrackId = state.currentTrackDetails?.id;
-          const currentTimeMs = state.currentTime * 1000;
+// 5. Track Loading Slice Creator
+const createTrackLoadingSlice: StateCreator<PlayerStore, [["zustand/immer", never]], [], TrackLoadingSlice> = (set, get) => ({
+    loadAndPlayTrack: async (trackId) => {
+        const state = get();
+        const currentLoadingId = state._currentTrackIdLoading;
+        const currentPlayingId = state.currentTrackDetails?.id;
 
-          // Force immediate progress recording before unloading
-          debouncedRecordProgress.cancel();
-          if (currentTrackId && currentTimeMs >= 0) {
-               log(`Recording final progress ${Math.round(currentTimeMs)}ms on stop`);
-               recordProgressAction(currentTrackId, Math.round(currentTimeMs))
-                   .catch(err => errorLog("Error recording final progress on stop:", err));
-          }
+        if (currentLoadingId === trackId) { log(`Track ${trackId} is already loading.`); return; }
+        if (currentPlayingId === trackId && [PlaybackState.READY, PlaybackState.PAUSED, PlaybackState.ENDED].includes(state.playbackState)) {
+            log(`Track ${trackId} is loaded, calling play().`);
+            get().play(); return;
+        }
+        if (currentPlayingId === trackId && state.playbackState === PlaybackState.PLAYING) {
+            log(`Track ${trackId} is already playing.`); return;
+        }
 
-          clearLoadTimeout();
+        log(`Loading track: ${trackId}`);
+        get().stop(); // Stop previous track & save progress
 
-          set(draft => {
-              const audioEl = draft._htmlAudioElement; // Cache ref before resetting
-              const audioCtx = draft._audioContext;
-              const gainNode = draft._gainNode;
-              const sourceNode = draft._mediaElementSourceNode;
+        get()._setCurrentTrackIdLoading(trackId);
+        get().setPlaybackState(PlaybackState.LOADING);
+        get().setError(null);
+        get().setTrackDetails(null);
+        get().setDuration(0);
+        get().setCurrentTime(0);
 
-              // Reset state to initial
-              Object.assign(draft, initialState);
+        get()._clearLoadTimeout(); // Clear any previous timeout
+        const timeoutId = setTimeout(() => {
+            warn(`Loading timed out for track ${trackId}`);
+            get().setError("Loading timed out.", trackId);
+        }, 30000); // 30 second timeout
+        get()._setLoadTimeout(timeoutId);
 
-              // Keep essential refs if they exist
-              draft._htmlAudioElement = audioEl;
-              draft._audioContext = audioCtx;
-              draft._gainNode = gainNode;
-              draft._mediaElementSourceNode = sourceNode; // Keep source node if element ref persists
+        try {
+            const trackDetails = await getTrackDetails(trackId);
+            // Check if the load wasn't cancelled while fetching
+            if (get()._currentTrackIdLoading !== trackId) { log(`Load cancelled for ${trackId} during fetch.`); return; }
+            if (!trackDetails?.playUrl) throw new Error("Track details or play URL missing.");
 
-               // Reset HTML element state
-               if (audioEl) {
-                   try {
-                       if (!audioEl.paused) audioEl.pause();
-                       audioEl.removeAttribute("src");
-                       // Force browser to release resources
-                       audioEl.load();
-                       log("HTMLAudioElement reset on stop.");
-                   } catch (e) { warn("Error resetting HTMLAudioElement on stop:", e); }
-               }
-          });
-      },
+            const trackDurationSec = trackDetails.durationMs / 1000;
+            let initialSeekTime = trackDetails.userProgressMs != null && trackDetails.userProgressMs > 0
+                                ? Math.min(trackDetails.userProgressMs / 1000, trackDurationSec) : 0;
 
-      cleanup: () => {
-         log("Cleanup action called");
-         get().stop(); // Ensure stop logic runs
+            log(`Details loaded for ${trackId}. Duration: ${trackDurationSec}s. Initial Seek: ${initialSeekTime}s`);
 
-         set(state => {
-              // Close AudioContext
-              if (state._audioContext && state._audioContext.state !== 'closed') {
-                 state._audioContext.close().then(()=>log("AudioContext closed.")).catch(e => warn("Error closing AudioContext:", e));
-              }
-              // Remove listeners from element if it exists
-              if (state._htmlAudioElement) {
-                   removeAudioElementListeners(state._htmlAudioElement);
-              }
-              // Nullify all internal refs completely
-              Object.assign(state, initialState);
-         });
-      }
-    };
-  }, {
-      name: 'player-storage-v2', // Use a different name if migrating
-  })
+            get()._initAudioContextIfNeeded(); // Ensure context is ready
+            const audioEl = get()._htmlAudioElement;
+            if (!audioEl) throw new Error("HTMLAudioElement ref not available.");
+
+            // Update state with details
+            get().setTrackDetails(trackDetails);
+            get().setDuration(trackDurationSec);
+            get().setCurrentTime(initialSeekTime);
+            get()._connectMediaElementSource(); // Ensure connection
+
+            // Set src and load
+            audioEl.src = trackDetails.playUrl;
+            audioEl.load();
+
+            // Handler to attempt play once ready
+            const playWhenReady = () => {
+                // Double check if we are still supposed to play *this* track
+                if (get().currentTrackDetails?.id === trackId) {
+                    log(`Stream can play. Setting currentTime: ${initialSeekTime}`);
+                    audioEl.currentTime = initialSeekTime; // Set time now
+                    audioEl.play()
+                       .then(() => log("Playback started via loadAndPlayTrack."))
+                       .catch(err => {
+                           warn(`Autoplay likely blocked for track ${trackId}:`, err);
+                           if (get().currentTrackDetails?.id === trackId) {
+                               get().setPlaybackState(PlaybackState.READY); // Update state to READY
+                               get()._setCurrentTrackIdLoading(null); // Clear loading state
+                           }
+                       });
+                } else {
+                     log(`Skipping play for ${trackId}, another track is active.`);
+                }
+                 get()._clearLoadTimeout(); // Clear timeout once playable
+                 audioEl.removeEventListener('canplay', playWhenReady);
+                 audioEl.removeEventListener('loadeddata', playWhenReady); // Also remove fallback listener
+            };
+            // Use 'canplay' as the primary trigger
+            audioEl.addEventListener('canplay', playWhenReady, { once: true });
+            // Add 'loadeddata' as a fallback trigger
+            audioEl.addEventListener('loadeddata', playWhenReady, { once: true });
+
+        } catch (err: any) {
+            get().setError(`Failed to load track ${trackId}: ${err.message}`, trackId);
+        }
+    },
+});
+
+
+// --- Create Store ---
+export const usePlayerStore = create<PlayerStore>()(
+    immer((...a) => ({
+        ...createStateSlice(...a),
+        ...createAudioEngineSlice(...a),
+        ...createVolumeSlice(...a),
+        ...createPlaybackControlSlice(...a),
+        ...createTrackLoadingSlice(...a),
+    }))
 );
+
+// --- Cleanup Hook (Optional but recommended if used in specific components) ---
+/*
+import { useEffect } from 'react';
+export const usePlayerCleanup = () => {
+  const cleanup = usePlayerStore((state) => state.cleanupAudioEngine);
+  useEffect(() => {
+    // Cleanup on component unmount where the hook is used
+    return () => {
+      cleanup();
+    };
+  }, [cleanup]);
+};
+// Usage in your main layout or player component:
+// usePlayerCleanup();
+*/
+
+// Initial check if AudioContext is available (run once)
+if (typeof window !== 'undefined' && !window.AudioContext && !(window as any).webkitAudioContext) {
+    console.error("This browser does not support the Web Audio API, playback might be limited.");
+}
