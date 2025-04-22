@@ -9,7 +9,7 @@ import { TrackList } from '@/_components/track/TrackList';
 import type { ListTrackQueryParams, AudioLevel } from '@repo/types';
 import { PaginationControls } from '@/_components/ui/PaginationControls';
 import { Input, Select } from '@repo/ui';
-import { useDebounce } from '@/_hooks/useDebounce';
+import { useDebounce } from '@repo/utils';
 import { DefaultLimit, MaxLimit } from '@repo/utils'; // Use shared constants
 import { Loader } from 'lucide-react';
 

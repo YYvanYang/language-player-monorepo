@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@repo
 import { formatDuration, cn } from '@repo/utils';
 import { PlayTrackButton } from './PlayTrackButton';
 import { Badge } from '@repo/ui';
-import { WifiOff, MusicNote } from 'lucide-react'; // Example icons
+import { WifiOff, Music } from 'lucide-react'; // Example icons
 
 interface TrackCardProps {
   track: AudioTrackResponseDTO;
@@ -30,7 +30,7 @@ export function TrackCard({ track, className }: TrackCardProps) {
             />
          ) : (
            <div className="flex flex-col items-center justify-center h-full text-slate-400 dark:text-slate-500">
-                 <MusicNote size={32}/>
+                 <Music size={32}/>
                  <span className="mt-1 text-xs">{track.languageCode}</span>
            </div>
         )}
