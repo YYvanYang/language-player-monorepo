@@ -10,9 +10,14 @@ import { Play, Pause, Volume2, VolumeX, SkipForward, SkipBack, Loader, AlertTria
 import { AddBookmarkButton } from './AddBookmarkButton'; // Import bookmark button
 import Link from 'next/link';
 import Image from 'next/image';
+import { useAudioClip } from '@repo/utils'; // Import hook
+import { AudioVisualizer } from './AudioVisualizer'; // Import the new component
+import { cn } from '@repo/utils'; // Make sure cn is imported
 
 export function PlayerUI() {
   const audioRef = useRef<HTMLAudioElement>(null);
+  const playClickSound = useAudioClip('/sounds/click.wav', 0.3); // Sound for most buttons
+  const playSeekSound = useAudioClip('/sounds/seek.wav', 0.15); // Optional different sound for seek
 
   // Select needed state and actions from store
   const {
@@ -31,6 +36,7 @@ export function PlayerUI() {
     toggleMute,
     _setHtmlAudioElementRef,
     stop, // Add stop action
+    amplitudeLevels,
   } = usePlayerStore(state => ({
     playbackState: state.playbackState,
     currentTrackDetails: state.currentTrackDetails,
@@ -48,6 +54,7 @@ export function PlayerUI() {
     toggleMute: state.toggleMute,
     _setHtmlAudioElementRef: state._setHtmlAudioElementRef,
     stop: state.stop, // Get stop action
+    amplitudeLevels: state.amplitudeLevels, // Select the levels
   }));
 
   // Pass the audio element ref to the store when it mounts/unmounts
@@ -57,11 +64,28 @@ export function PlayerUI() {
   }, [_setHtmlAudioElementRef]);
 
   const handleSeek = (event: React.ChangeEvent<HTMLInputElement>) => {
+    // playSeekSound(); // Play sound on slider change completion (onMouseUp might be better)
     seek(parseFloat(event.target.value));
   };
 
+  // Consider adding onMouseUp to the slider to play sound only when seek is finished
+  const handleSeekComplete = () => {
+    playSeekSound();
+  };
+
    const handleVolumeChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    // Optionally play sound on volume change, might be noisy
     setVolume(parseFloat(event.target.value));
+  };
+
+  const handleTogglePlayPause = () => {
+    playClickSound();
+    togglePlayPause();
+  };
+
+  const handleToggleMute = () => {
+    playClickSound();
+    toggleMute();
   };
 
    const handleSeekRelative = (deltaSeconds: number) => {
@@ -112,15 +136,25 @@ export function PlayerUI() {
              <div className="flex flex-col items-center flex-grow w-full sm:w-1/2 max-w-xl">
                  {/* Control Buttons */}
                 <div className="flex items-center justify-center gap-2 mb-1 w-full">
-                     <Button variant="ghost" size="icon" className="text-slate-300 hover:text-white hover:bg-slate-700" onClick={() => handleSeekRelative(-10)} disabled={!canInteract} title="Rewind 10s">
-                       <Rewind className="h-5 w-5" />
+                     {/* ADD VISUALIZER HERE */}
+                     <div className="flex-grow flex items-center justify-center h-10">
+                         <AudioVisualizer levels={amplitudeLevels} isPlaying={isPlaying} />
+                     </div>
+                     {/* Play/Pause Button */}
+                     <Button variant="ghost" size="icon" className="text-white hover:bg-slate-700 w-10 h-10" onClick={handleTogglePlayPause} disabled={!canInteract || isLoading} title={isPlaying ? "Pause" : "Play"}>
+                          {isLoading ? <Loader className="h-6 w-6 animate-spin" /> : (isPlaying ? <Pause className="h-6 w-6" /> : <Play className="h-6 w-6" />)}
                      </Button>
-                     <Button variant="ghost" size="icon" className="text-white hover:bg-slate-700 w-10 h-10" onClick={togglePlayPause} disabled={!canInteract || isLoading} title={isPlaying ? "Pause" : "Play"}>
-                         {isLoading ? <Loader className="h-6 w-6 animate-spin" /> : (isPlaying ? <Pause className="h-6 w-6" /> : <Play className="h-6 w-6" />)}
+                     {/* ADD Spacer or adjust layout to balance controls */}
+                      <div className="flex-grow"></div>
+
+                      {/* Seek Buttons - Keep them closer? */}
+                      <Button variant="ghost" size="icon" className="text-slate-300 hover:text-white hover:bg-slate-700" onClick={() => handleSeekRelative(-10)} disabled={!canInteract} title="Rewind 10s">
+                         <Rewind className="h-5 w-5" />
+                      </Button>
+                     <Button variant="ghost" size="icon" className="text-slate-300 hover:text-white hover:bg-slate-700" onClick={() => handleSeekRelative(30)} disabled={!canInteract} title="Forward 30s">
+                          <FastForward className="h-5 w-5" />
                      </Button>
-                    <Button variant="ghost" size="icon" className="text-slate-300 hover:text-white hover:bg-slate-700" onClick={() => handleSeekRelative(30)} disabled={!canInteract} title="Forward 30s">
-                        <FastForward className="h-5 w-5" />
-                     </Button>
+                     
                       {/* Bookmark Button */}
                      <div className="ml-auto">
                          <AddBookmarkButton />
@@ -135,6 +169,8 @@ export function PlayerUI() {
                         max={duration || 1} // Use 1 if duration is 0
                         value={currentTime}
                         onChange={handleSeek}
+                        onMouseUp={handleSeekComplete} // Play sound on release
+                        onTouchEnd={handleSeekComplete} // Play sound on touch release
                         disabled={!canInteract}
                         className="w-full h-1.5 bg-slate-600 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-blue-500 accent-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
                         aria-label="Seek slider"
@@ -153,7 +189,7 @@ export function PlayerUI() {
 
             {/* Right: Volume Control */}
             <div className="flex items-center gap-2 w-full justify-center sm:w-1/4 sm:justify-end">
-                 <Button variant="ghost" size="icon" className="text-slate-300 hover:text-white hover:bg-slate-700" onClick={toggleMute} title={isMuted ? "Unmute" : "Mute"}>
+                 <Button variant="ghost" size="icon" className="text-slate-300 hover:text-white hover:bg-slate-700" onClick={handleToggleMute} title={isMuted ? "Unmute" : "Mute"}>
                      {isMuted || volume === 0 ? <VolumeX className="h-5 w-5" /> : <Volume2 className="h-5 w-5" />}
                  </Button>
                  <input

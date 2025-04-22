@@ -5,6 +5,7 @@ import { Button } from '@repo/ui';
 import { Play, Pause, Loader } from 'lucide-react';
 import { PlaybackState } from '@/_lib/constants'; // Adjust path
 import { cn } from '@repo/utils';
+import { useAudioClip } from '@repo/utils';
 
 interface PlayTrackButtonProps {
   trackId: string;
@@ -21,6 +22,8 @@ export function PlayTrackButton({
     className,
     showLabel = true,
 }: PlayTrackButtonProps) {
+  const playClickSound = useAudioClip('/sounds/click.wav', 0.3); // Use the hook
+
   // Select needed state and actions
   const { loadAndPlayTrack, togglePlayPause, currentTrackId, playbackState } = usePlayerStore(
     (state) => ({
@@ -44,6 +47,7 @@ export function PlayTrackButton({
 
 
   const handleClick = () => {
+    playClickSound(); // Play sound on click
     if (isCurrentTrack) {
       togglePlayPause(); // Toggle play/pause if it's already the loaded track
     } else {

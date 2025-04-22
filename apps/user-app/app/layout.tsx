@@ -15,8 +15,22 @@ const fontSans = FontSans({
 });
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
-  const playerCleanup = usePlayerStore((state) => state.cleanup);
+  const playerCleanup = usePlayerStore((state) => state.cleanupAudioEngine);
 
+  // Register Service Worker
+  useEffect(() => {
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker
+        .register('/audio-sw.js') // Path relative to the root
+        .then((registration) => {
+          console.log('[Layout] Service Worker registered with scope:', registration.scope);
+        })
+        .catch((error) => {
+          console.error('[Layout] Service Worker registration failed:', error);
+        });
+    }
+  }, []);
+  
   // Cleanup audio resources on root unmount
   useEffect(() => {
     return () => {

@@ -10,7 +10,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { bookmarksQueryKeys } from '@/_hooks/useBookmarks'; // Import query keys
 import { useAuth } from '@/_hooks/useAuth';
 import { PlaybackState } from '@/_lib/constants';
-
+import { useAudioClip } from '@repo/utils'; // Import hook
 export function AddBookmarkButton() {
   const { user } = useAuth(); // Get user for query keys
   const { currentTrackDetails, currentTime, playbackState } = usePlayerStore(state => ({
@@ -20,6 +20,9 @@ export function AddBookmarkButton() {
   }));
   const [isPending, startTransition] = useTransition();
   const queryClient = useQueryClient();
+  const playClickSound = useAudioClip('/sounds/click.wav', 0.3);
+  const playSuccessSound = useAudioClip('/sounds/success.wav', 0.4); // Example
+  const playErrorSound = useAudioClip('/sounds/error.wav', 0.4); // Example
 
   // Can bookmark if a track is loaded, playing/paused/ready/ended, and time > 0
   const canBookmark = currentTrackDetails && currentTime >= 0 &&
@@ -29,6 +32,7 @@ export function AddBookmarkButton() {
                       playbackState !== PlaybackState.ERROR;
 
   const handleAddBookmark = () => {
+    playClickSound(); // Play click sound immediately
     if (!canBookmark || !user?.id) return;
 
     const timestampMs = Math.floor(currentTime * 1000);
@@ -40,6 +44,7 @@ export function AddBookmarkButton() {
       const result = await createBookmarkAction(trackId, timestampMs, note); // Pass note
 
       if (result.success && result.bookmark) {
+        playSuccessSound(); // Play success sound
         console.log('Bookmark created:', result.bookmark);
         // Invalidate relevant bookmark queries
         // Use query keys factory for consistency
@@ -48,6 +53,7 @@ export function AddBookmarkButton() {
         // TODO: Show success toast
          alert("Bookmark added!");
       } else {
+        playErrorSound(); // Play error sound
         console.error("Failed to add bookmark:", result.message);
         // TODO: Show error toast
         alert(`Error adding bookmark: ${result.message || 'Unknown error'}`);
