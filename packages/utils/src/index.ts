@@ -1,4 +1,5 @@
 // packages/utils/src/index.ts
+import React from 'react';
 import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
 

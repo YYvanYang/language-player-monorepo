@@ -1,6 +1,5 @@
 // apps/user-app/_stores/playerStore.ts
-import { StateCreator } from 'zustand'; // Import create from base zustand
-import { createWithEqualityFn } from 'zustand/traditional'; // Import createWithEqualityFn
+import { create, StateCreator } from 'zustand'; // Import create from base zustand
 import { immer } from 'zustand/middleware/immer';
 import type { AudioTrackDetailsResponseDTO } from '@repo/types';
 import { PlaybackState } from '@/_lib/constants';
@@ -656,21 +655,18 @@ const createTrackLoadingSlice: StateCreator<PlayerStore, [["zustand/immer", neve
 
 
 // --- Create Store ---
-// Use createWithEqualityFn and immer middleware
-const playerStoreApi = createWithEqualityFn<PlayerStore>()(
+const playerStoreApi = create<PlayerStore>()( 
     immer((...a) => ({
         ...createStateSlice(...a),
         ...createAudioEngineSlice(...a),
         ...createVolumeSlice(...a),
         ...createPlaybackControlSlice(...a),
         ...createTrackLoadingSlice(...a),
-    })),
-    Object.is // Default equality function
+    }))
 );
 
 // Export the hook and the api object
 export const usePlayerStore = playerStoreApi;
-export { playerStoreApi };
 
 
 // Initial check if AudioContext is available (run once on module load)
