@@ -23,7 +23,8 @@ async function CollectionsContent({ searchParams }: { searchParams?: { [key: str
     const offset = (page - 1) * limit;
 
     // Check session server-side ONLY to determine if user is logged in
-    const session = await getIronSession<SessionData>(cookies(), getUserSessionOptions());
+    const cookieStore = await cookies();
+    const session = await getIronSession<SessionData>(cookieStore, getUserSessionOptions());
     const currentUserId = session.userId;
 
     // REMOVED: Token decryption logic is now handled by the BFF proxy
