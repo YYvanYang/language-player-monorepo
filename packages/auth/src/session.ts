@@ -5,7 +5,7 @@ import type { SessionOptions } from 'iron-session';
 export interface SessionData {
     userId?: string; // Store as string (UUID)
     isAdmin?: boolean; // Explicitly track admin status in session
-    // Add other fields if needed, e.g., csrfToken: string;
+    encryptedAccessToken?: string; // ADDED: Encrypted JWT Access Token
 }
 
 // Recommended: Use environment variables for secrets and names
@@ -16,9 +16,9 @@ const DEFAULT_ADMIN_SESSION_NAME = 'admin_panel_auth_session';
 // Base cookie options
 const baseCookieOptions: SessionOptions['cookieOptions'] = {
     secure: process.env.NODE_ENV === 'production',
-    httpOnly: true,
+    httpOnly: true, // Crucial for security
     path: '/',
-    // REMOVED maxAge: undefined - use ttl: 0 for session cookies
+    // Removed maxAge: undefined - use ttl: 0 for session cookies
 };
 
 // Function to get User App Session Options
@@ -31,15 +31,17 @@ export function getUserSessionOptions(): SessionOptions {
         const message = "FATAL SECURITY WARNING: USER_SESSION_SECRET environment variable is missing or less than 32 characters long! Session encryption is compromised.";
         console.error("\n" + "*".repeat(message.length) + "\n" + message + "\n" + "*".repeat(message.length) + "\n");
         if (process.env.NODE_ENV === 'production') {
-            throw new Error("USER_SESSION_SECRET environment variable is not configured correctly.");
+            // Optionally throw error only in production, allowing dev fallback
+             throw new Error("USER_SESSION_SECRET environment variable is not configured correctly.");
         }
     }
     // --- END CHECK ---
 
     return {
         cookieName: name,
-        password: secret || "fallback-insecure-user-secret-for-dev-only-32-chars", // Fallback ONLY for dev
-        ttl: 0, // Session cookie (expires when browser closes)
+        // Provide a default ONLY IN NON-PRODUCTION environments if secret is missing
+        password: secret || (process.env.NODE_ENV !== 'production' ? "fallback-insecure-user-secret-for-dev-only-32-chars" : ""),
+        ttl: 0, // Session cookie (expires when browser closes) - Recommended default
         // ttl: THIRTY_DAYS_IN_SECONDS, // Uncomment for persistent login
         cookieOptions: {
             ...baseCookieOptions,
@@ -62,7 +64,8 @@ export function getAdminSessionOptions(): SessionOptions {
             throw new Error("ADMIN_SESSION_SECRET environment variable is not configured correctly.");
         }
     }
-    if (secret && userSecret && secret === userSecret) {
+    // Ensure admin secret is different from user secret
+    if (secret && userSecret && secret === userSecret && secret !== "fallback-insecure-admin-secret-for-dev-only-32-chars") { // Avoid warning during fallback
          const message = "FATAL SECURITY WARNING: ADMIN_SESSION_SECRET must be DIFFERENT from USER_SESSION_SECRET!";
          console.error("\n" + "*".repeat(message.length) + "\n" + message + "\n" + "*".repeat(message.length) + "\n");
          if (process.env.NODE_ENV === 'production') {
@@ -73,7 +76,8 @@ export function getAdminSessionOptions(): SessionOptions {
 
     return {
         cookieName: name,
-        password: secret || "fallback-insecure-admin-secret-for-dev-only-32-chars", // Fallback ONLY for dev
+        // Provide a default ONLY IN NON-PRODUCTION environments if secret is missing
+        password: secret || (process.env.NODE_ENV !== 'production' ? "fallback-insecure-admin-secret-for-dev-only-32-chars" : ""),
         ttl: 0, // Session cookie strongly recommended for admin panels
         cookieOptions: {
             ...baseCookieOptions,

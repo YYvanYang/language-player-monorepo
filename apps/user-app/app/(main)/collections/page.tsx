@@ -4,25 +4,31 @@ import { cookies } from 'next/headers';
 import Link from 'next/link';
 import { getIronSession } from 'iron-session';
 import { SessionData, getUserSessionOptions } from '@repo/auth';
+// Now uses the service function that calls the proxy
 import { listMyCollections, type ListMyCollectionsParams } from '@/_services/collectionService';
 import { CollectionList } from '@/_components/collection/CollectionList';
 import { Button } from '@repo/ui';
-import { Plus, ListMusic, Info } from 'lucide-react';
+import { Plus, ListMusic, Info, ShieldAlert } from 'lucide-react';
 import { PaginationControls } from '@/_components/ui/PaginationControls';
-import { DefaultLimit } from '@repo/utils'; // Use shared constant
+import { DefaultLimit } from '@repo/utils'; // Adjusted import
+import { Loader } from 'lucide-react';
+import { APIError } from '@repo/api-client'; // Adjusted import
 
-interface CollectionsPageProps {
-  searchParams?: { [key: string]: string | string[] | undefined };
-}
 
-async function CollectionsContent({ searchParams }: CollectionsPageProps) {
+// REMOVED decryptAccessToken placeholder function
+
+async function CollectionsContent({ searchParams }: { searchParams?: { [key: string]: string | string[] | undefined } }) {
     const page = parseInt(searchParams?.page as string || '1', 10);
     const limit = parseInt(searchParams?.limit as string || String(DefaultLimit), 10);
     const offset = (page - 1) * limit;
 
-    // Check auth status directly here to avoid fetching if not logged in
+    // Check session server-side ONLY to determine if user is logged in
     const session = await getIronSession<SessionData>(cookies(), getUserSessionOptions());
-    if (!session.userId) {
+    const currentUserId = session.userId;
+
+    // REMOVED: Token decryption logic is now handled by the BFF proxy
+
+    if (!currentUserId) {
         return (
              <div className="text-center text-slate-500 dark:text-slate-400 py-10">
                   <Info size={24} className="mx-auto mb-2 text-slate-400"/>
@@ -33,13 +39,16 @@ async function CollectionsContent({ searchParams }: CollectionsPageProps) {
         );
     }
 
+    // REMOVED: decryptionError check is no longer needed here
+
     try {
-        // Fetch data for the current page
-        const params: ListMyCollectionsParams = { limit, offset, sortBy: 'updatedAt', sortDir: 'desc' }; // Example sort
+        // Fetch data using the service function that calls the proxy
+        const params: ListMyCollectionsParams = { limit, offset, sortBy: 'updatedAt', sortDir: 'desc' };
+        // REMOVED: Token argument is no longer passed to listMyCollections
         const { data: collections, total } = await listMyCollections(params);
 
         if (total === 0) {
-             return (
+            return (
                  <div className="text-center py-10 text-slate-500 dark:text-slate-400">
                     <ListMusic className="mx-auto h-12 w-12 text-slate-300 dark:text-slate-600 mb-2"/>
                     You haven't created any collections yet.
@@ -63,25 +72,36 @@ async function CollectionsContent({ searchParams }: CollectionsPageProps) {
             </>
         );
     } catch (error: any) {
-         console.error("Failed to load user collections:", error);
-         // Handle specific errors if needed (e.g., API down)
-         return <p className="text-center text-red-500 dark:text-red-400">Could not load your collections at this time. Please try again later.</p>;
+        console.error("Failed to load user collections (via proxy):", error);
+         // Handle 401 error coming FROM THE PROXY
+        if (error instanceof APIError && error.status === 401) {
+             return (
+                 <div className="text-center text-slate-500 dark:text-slate-400 py-10">
+                      <Info size={24} className="mx-auto mb-2 text-slate-400"/>
+                     Your session may have expired or is invalid. Please <Link href="/login?next=/collections" className="text-blue-600 hover:underline font-medium">Login</Link> again.
+                 </div>
+             );
+        }
+        // Handle other errors (e.g., 502 from proxy if backend is down)
+         const message = error instanceof APIError ? error.message : "Could not load your collections. Please try again later.";
+         return <p className="text-center text-red-500 dark:text-red-400">{message}</p>;
     }
 }
 
-export default function CollectionsPage({ searchParams }: CollectionsPageProps) {
+// Main export using Suspense remains the same
+export default function CollectionsPage({ searchParams }: { searchParams?: { /*...*/ } }) {
     return (
         <div className="container mx-auto py-6">
             <div className="flex justify-between items-center mb-6">
                 <h1 className="text-2xl md:text-3xl font-bold">Your Collections</h1>
-                <Button asChild size="sm">
-                    <Link href="/collections/new">
-                        <Plus className="h-4 w-4 mr-1" /> Create Collection
-                    </Link>
-                </Button>
+                 <Button asChild size="sm">
+                     <Link href="/collections/new">
+                         <Plus className="h-4 w-4 mr-1" /> Create Collection
+                     </Link>
+                 </Button>
             </div>
-             {/* Suspense handles loading state */}
-            <Suspense fallback={<div className="text-center p-10 text-slate-500">Loading collections...</div>}>
+            {/* Use a more specific loading indicator */}
+            <Suspense fallback={<div className="flex justify-center items-center p-10"><Loader className="h-8 w-8 animate-spin text-blue-500"/> Loading Collections...</div>}>
                 <CollectionsContent searchParams={searchParams} />
             </Suspense>
         </div>
