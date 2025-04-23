@@ -44,6 +44,8 @@ export async function createCollectionAction(requestData: CreateCollectionReques
 
     // Basic server-side validation
     if (!requestData.title?.trim()) {
+        debugger
+         console.log("Collection title is required.", requestData.title);
          return { success: false, message: "Collection title is required." };
     }
     if (!requestData.type || (requestData.type !== "COURSE" && requestData.type !== "PLAYLIST")) {

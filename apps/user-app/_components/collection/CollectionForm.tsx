@@ -2,14 +2,13 @@
 'use client';
 
 import React, { useEffect } from 'react';
-import { useForm, Controller, SubmitHandler } from 'react-hook-form';
+import { useForm, Controller } from 'react-hook-form';
 import { useActionState } from 'react';
 import { useFormStatus } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import { Button, Input, Textarea, Select, Label } from '@repo/ui';
 import type {
     AudioCollectionResponseDTO,
-    CreateCollectionRequestDTO,
     UpdateCollectionRequestDTO,
     CollectionType,
 } from '@repo/types';
@@ -25,7 +24,6 @@ interface CollectionFormData {
     title: string;
     description: string;
     type: CollectionType;
-    // initialTrackIds removed - handle track selection separately
 }
 
 interface CollectionFormProps {
@@ -52,79 +50,151 @@ export function CollectionForm({ initialData, onSuccess, onCancel }: CollectionF
     const router = useRouter();
     const isEditing = !!initialData;
 
+    // 使用react-hook-form管理表单状态和验证
     const {
         register,
-        handleSubmit, // Use RHF's handleSubmit for client-side validation *before* calling the action programmatically
+        control,
+        formState: { errors },
         reset,
-        control, // For Controller component (Select)
-        formState: { errors, isDirty }, // Track errors and changes
     } = useForm<CollectionFormData>({
         defaultValues: {
             title: initialData?.title ?? '',
             description: initialData?.description ?? '',
-            type: (initialData?.type as CollectionType) ?? 'PLAYLIST', // Default to PLAYLIST for new
+            type: (initialData?.type as CollectionType) ?? 'PLAYLIST',
         },
     });
 
-    // Determine the correct server action based on mode
-    const actionToCall = isEditing
-        ? (data: CollectionFormData) => updateCollectionMetadataAction(initialData!.id, data) // Pass data directly
-        : (data: CollectionFormData) => createCollectionAction({ ...data, initialTrackIds: [] }); // Create without tracks
+    // 定义服务器action函数
+    async function serverAction(prevState: any, formData: FormData) {
+        try {
+            // 服务器端的基本验证
+            const title = formData.get('title') as string;
+            if (!title?.trim()) {
+                return { success: false, message: "Title is required" };
+            }
+            
+            const type = formData.get('type') as CollectionType;
+            if (!type || (type !== 'PLAYLIST' && type !== 'COURSE')) {
+                return { success: false, message: "Valid collection type is required" };
+            }
+            
+            const description = formData.get('description') as string;
+            
+            if (isEditing && initialData) {
+                // 更新现有集合
+                const updateResult = await updateCollectionMetadataAction(initialData.id, {
+                    title,
+                    description
+                });
+                
+                if (updateResult.success) {
+                    // 更新成功，返回更新后的集合
+                    return { 
+                        success: true, 
+                        message: "Collection updated successfully",
+                        collection: {
+                            ...initialData,
+                            title,
+                            description,
+                            type
+                        }
+                    };
+                } else {
+                    return { 
+                        success: false, 
+                        message: updateResult.message || "Failed to update collection"
+                    };
+                }
+            } else {
+                // 创建新集合
+                const createResult = await createCollectionAction({
+                    title,
+                    description,
+                    type,
+                    initialTrackIds: []
+                });
+                
+                if (createResult.success && createResult.collection) {
+                    return { 
+                        success: true, 
+                        message: "Collection created successfully",
+                        collection: createResult.collection
+                    };
+                } else {
+                    return { 
+                        success: false, 
+                        message: createResult.message || "Failed to create collection"
+                    };
+                }
+            }
+        } catch (error) {
+            return { 
+                success: false, 
+                message: error instanceof Error ? error.message : "An unexpected error occurred"
+            };
+        }
+    }
 
-    // State for handling server action feedback
-    type ActionState = { success: boolean; message?: string; collection?: AudioCollectionResponseDTO } | null;
-    const [state, submitAction, isPending] = useActionState<ActionState, CollectionFormData>(actionToCall, null);
+    // 使用useActionState管理服务器action的状态
+    const [state, formAction, isPending] = useActionState(serverAction, null);
 
-    // Reset form if initialData changes (e.g., navigating between edit pages)
+    // Reset form if initialData changes
     useEffect(() => {
         if (initialData) {
-            reset({ title: initialData.title, description: initialData.description ?? '', type: initialData.type });
+            reset({ 
+                title: initialData.title, 
+                description: initialData.description ?? '', 
+                type: initialData.type 
+            });
         } else {
-            reset({ title: '', description: '', type: 'PLAYLIST' });
+            reset({ 
+                title: '', 
+                description: '', 
+                type: 'PLAYLIST' 
+            });
         }
     }, [initialData, reset]);
 
-    // Handle success/error feedback after server action completes
+    // 处理服务器响应
     useEffect(() => {
         if (state?.success) {
-            const collection = state.collection ?? initialData; // Use returned or initial data
-            // Show success feedback (e.g., toast)
-            alert(isEditing ? "Collection updated successfully!" : "Collection created successfully!"); // Replace with toast
-            if (onSuccess && collection) {
-                onSuccess(collection); // Call onSuccess callback if provided
-            } else if (collection?.id && !isEditing) { // Default redirect on create if no callback
-                router.push(`/collections/${collection.id}`);
+            const collection = state.collection;
+            if (collection) {
+                // 调用成功回调或重定向
+                if (onSuccess) {
+                    onSuccess(collection);
+                } else if (!isEditing) {
+                    router.push(`/collections/${collection.id}`);
+                }
             }
-            // Optionally reset form after successful creation if not redirecting
-            // if (!isEditing && !onSuccess) reset();
-        } else if (state && !state.success && state.message) {
-            // Show server-side error (e.g., toast or inline message)
-            console.error("Server Action Error:", state.message);
-            // Error message is displayed below the form using `state.message`
         }
-    }, [state, isEditing, onSuccess, initialData, router, reset]);
-
-    // RHF's onSubmit handles client validation THEN calls submitAction
-    const onSubmit: SubmitHandler<CollectionFormData> = (data) => {
-        // Client-side validation passed, now call the server action
-        submitAction(data);
-    };
+    }, [state, onSuccess, isEditing, router]);
 
     return (
-        // Use RHF's handleSubmit to trigger client validation before calling the action
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-
+        <form action={formAction} className="space-y-4">
             {/* Title Field */}
             <div>
                 <Label htmlFor="title" className={cn(errors.title && "text-red-600")}>Title*</Label>
                 <Input
                     id="title"
-                    {...register('title', { required: 'Title is required', maxLength: { value: 255, message: 'Title cannot exceed 255 characters'} })}
+                    {...register('title', { 
+                        required: 'Title is required',
+                        maxLength: { 
+                            value: 255, 
+                            message: 'Title cannot exceed 255 characters'
+                        } 
+                    })}
+                    name="title"
+                    required
                     className={cn("mt-1", errors.title ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : '')}
                     aria-invalid={errors.title ? "true" : "false"}
                     disabled={isPending}
                 />
-                {errors.title && <p className="text-red-500 text-xs mt-1" role="alert">{errors.title.message}</p>}
+                {errors.title && (
+                    <p className="text-red-500 text-xs mt-1" role="alert">
+                        {errors.title.message}
+                    </p>
+                )}
             </div>
 
             {/* Description Field */}
@@ -134,17 +204,21 @@ export function CollectionForm({ initialData, onSuccess, onCancel }: CollectionF
                     id="description"
                     rows={4}
                     {...register('description')}
+                    name="description"
                     className={cn("mt-1", errors.description ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : '')}
                     aria-invalid={errors.description ? "true" : "false"}
                     disabled={isPending}
                 />
-                {errors.description && <p className="text-red-500 text-xs mt-1" role="alert">{errors.description.message}</p>}
+                {errors.description && (
+                    <p className="text-red-500 text-xs mt-1" role="alert">
+                        {errors.description.message}
+                    </p>
+                )}
             </div>
 
             {/* Type Field */}
             <div>
                 <Label htmlFor="type" className={cn(errors.type && "text-red-600")}>Collection Type*</Label>
-                {/* Use Controller for integrating non-standard inputs like Select with RHF */}
                 <Controller
                     name="type"
                     control={control}
@@ -152,7 +226,9 @@ export function CollectionForm({ initialData, onSuccess, onCancel }: CollectionF
                     render={({ field }) => (
                         <Select
                             id="type"
-                            {...field} // Spread field props (value, onChange, onBlur)
+                            {...field}
+                            name="type"
+                            required
                             className={cn("mt-1 block w-full", errors.type ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : '')}
                             aria-invalid={errors.type ? "true" : "false"}
                             disabled={isPending}
@@ -162,10 +238,14 @@ export function CollectionForm({ initialData, onSuccess, onCancel }: CollectionF
                         </Select>
                     )}
                 />
-                {errors.type && <p className="text-red-500 text-xs mt-1" role="alert">{errors.type.message}</p>}
+                {errors.type && (
+                    <p className="text-red-500 text-xs mt-1" role="alert">
+                        {errors.type.message}
+                    </p>
+                )}
             </div>
 
-            {/* Display Server Action Error Message (if not handled by toasts) */}
+            {/* Server Action Feedback */}
             {state && !state.success && state.message && (
                 <p className="text-red-600 text-sm p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded" role="alert">
                     {state.message}
@@ -174,13 +254,11 @@ export function CollectionForm({ initialData, onSuccess, onCancel }: CollectionF
 
             {/* Action Buttons */}
             <div className="flex justify-end items-center gap-3 pt-4 border-t dark:border-slate-700">
-                 {/* Allow Cancel button only if callback provided */}
-                 {onCancel && (
-                     <Button variant="outline" type="button" onClick={onCancel} disabled={isPending}>
-                         Cancel
-                     </Button>
-                 )}
-                {/* SubmitButton uses useFormStatus which is tied to the <form> */}
+                {onCancel && (
+                    <Button variant="outline" type="button" onClick={onCancel} disabled={isPending}>
+                        Cancel
+                    </Button>
+                )}
                 <SubmitButton isEditing={isEditing} />
             </div>
         </form>
