@@ -16,7 +16,7 @@ import { AudioVisualizer } from './AudioVisualizer';
 export function PlayerUI() {
   const audioRef = useRef<HTMLAudioElement>(null);
   const playClickSound = useAudioClip('/sounds/click.wav', 0.3);
-  const playSeekSound = useAudioClip('/sounds/seek.wav', 0.15);
+  // const playSeekSound = useAudioClip('/sounds/seek.wav', 0.15);
 
   // --- GRANULAR SELECTION ---
   // Select each piece of state individually.
@@ -56,7 +56,7 @@ export function PlayerUI() {
   const handleSeek = (event: React.ChangeEvent<HTMLInputElement>) => {
     seek(parseFloat(event.target.value));
   };
-  const handleSeekComplete = () => { playSeekSound(); };
+  const handleSeekComplete = () => { /*playSeekSound();*/ };
   const handleVolumeChange = (event: React.ChangeEvent<HTMLInputElement>) => { setVolume(parseFloat(event.target.value)); };
   const handleTogglePlayPause = () => { playClickSound(); togglePlayPause(); };
   const handleToggleMute = () => { playClickSound(); toggleMute(); };
