@@ -121,12 +121,8 @@ async function clearAuthCookiesHelper(): Promise<Headers> {
         // This implicitly adds a 'Set-Cookie' header to the eventual response
         if (cookieStore.has(REFRESH_TOKEN_COOKIE_NAME)) {
             cookieStore.delete(REFRESH_TOKEN_COOKIE_NAME);
-             console.log("Clear Tokens Helper: Refresh token cookie delete queued.");
-             // Manually construct the clearing header to return it immediately
-             const refreshCookieClear = cookie.serialize(REFRESH_TOKEN_COOKIE_NAME, '', {
-                 httpOnly: true, secure: process.env.NODE_ENV === 'production', path: '/', sameSite: 'lax', expires: new Date(0), maxAge: -1,
-             });
-              responseHeaders.append('Set-Cookie', refreshCookieClear);
+            console.log("Clear Tokens Helper: Refresh token cookie delete queued.");
+            // Next.js will automatically handle the Set-Cookie header for this cookie
         }
 
 
@@ -144,7 +140,7 @@ async function clearAuthCookiesHelper(): Promise<Headers> {
         const sessionCookieHeader = dummyRes.headers.get('set-cookie');
         if (sessionCookieHeader) {
             responseHeaders.append('Set-Cookie', sessionCookieHeader);
-             console.log("Clear Tokens Helper: Session cookie delete queued.");
+            console.log("Clear Tokens Helper: Session cookie delete queued.");
         }
 
     } catch(error) {
