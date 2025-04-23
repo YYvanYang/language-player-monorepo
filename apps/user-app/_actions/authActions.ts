@@ -42,7 +42,7 @@ async function setAuthCookiesDirectly(userId: string, accessToken: string, refre
 
         // 1. Set Iron Session Cookie (contains userId, encryptedAccessToken)
         // We need the 'cookies()' store instance for getIronSession in Actions/Route Handlers
-        const cookieStore = cookies();
+        const cookieStore = await cookies();
         const session = await getIronSession<SessionData>(cookieStore, getUserSessionOptions());
         session.userId = userId;
         session.encryptedAccessToken = encryptedAccessToken;
@@ -70,7 +70,7 @@ async function setAuthCookiesDirectly(userId: string, accessToken: string, refre
 // --- NEW: Helper to clear cookies directly within Server Action ---
 async function clearAuthCookiesDirectly(): Promise<boolean> {
     try {
-        const cookieStore = cookies();
+        const cookieStore = await cookies();
 
         // 1. Clear Iron Session Cookie
         const session = await getIronSession<SessionData>(cookieStore, getUserSessionOptions());
@@ -234,7 +234,8 @@ export async function logoutAction() {
     try {
         // IMPORTANT: Get session *before* calling backend logout, as we need the
         // encrypted token for the apiClient call via the proxy.
-        const session = await getIronSession<SessionData>(cookies(), getUserSessionOptions());
+        const cookieStore = await cookies();
+        const session = await getIronSession<SessionData>(cookieStore, getUserSessionOptions());
         const userIdForLog = session.userId; // For logging
 
         // Check if user was actually logged in before attempting backend logout
