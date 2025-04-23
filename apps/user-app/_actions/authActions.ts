@@ -3,7 +3,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
-import { cookies } from 'next/headers';
+import { cookies } from 'next/headers'; // Import cookies
 import apiClient, { APIError } from '@repo/api-client';
 import type {
     AuthResponseDTO,
@@ -31,7 +31,10 @@ async function setUserSessionCookie(userId: string): Promise<boolean> {
         return false;
     }
     try {
-        const session = await getIronSession<SessionData>(cookies(), getUserSessionOptions());
+        // --- FIX: Await cookies() before passing to getIronSession ---
+        const cookieStore = await cookies();
+        const session = await getIronSession<SessionData>(cookieStore, getUserSessionOptions());
+        // --- END FIX ---
         session.userId = userId;
         delete session.isAdmin; // Ensure admin flag is not set
         await session.save();
@@ -46,9 +49,14 @@ async function setUserSessionCookie(userId: string): Promise<boolean> {
 // REFACTORED: Helper to clear the user session cookie directly
 async function clearUserSessionCookie(): Promise<boolean> {
      try {
-        const session = await getIronSession<SessionData>(cookies(), getUserSessionOptions());
+        // --- FIX: Await cookies() before passing to getIronSession ---
+        const cookieStore = await cookies();
+        const session = await getIronSession<SessionData>(cookieStore, getUserSessionOptions());
+        // --- END FIX ---
         session.destroy();
         console.log("Auth Action: User session destroyed directly.");
+        // destroy() calls save() internally in iron-session v8+
+        // await session.save(); // No longer explicitly needed unless forcing save before redirect etc.
         return true;
     } catch (error) {
         console.error("Auth Action: Error destroying user session directly:", error);

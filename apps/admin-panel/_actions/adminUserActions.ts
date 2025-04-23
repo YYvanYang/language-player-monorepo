@@ -1,7 +1,7 @@
 // apps/admin-panel/_actions/adminUserActions.ts
 'use server';
 
-import { cookies } from 'next/headers';
+import { cookies } from 'next/headers'; // Import cookies
 import { revalidateTag, revalidatePath } from 'next/cache';
 import apiClient, { APIError } from '@repo/api-client';
 // MODIFIED: Ensure AdminUpdateUserRequestDTO is imported
@@ -12,7 +12,10 @@ import { getIronSession } from 'iron-session';
 // --- Helper to verify admin status ---
 export async function verifyAdmin(): Promise<boolean> {
     try {
-       const session = await getIronSession<SessionData>(cookies(), getAdminSessionOptions());
+       // --- FIX: Await cookies() before passing to getIronSession ---
+       const cookieStore = await cookies();
+       const session = await getIronSession<SessionData>(cookieStore, getAdminSessionOptions());
+       // --- END FIX ---
        return session.userId != null && session.userId !== "" && session.isAdmin === true;
     } catch { return false; }
 }

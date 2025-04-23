@@ -31,7 +31,10 @@ async function setAdminSessionCookie(userId: string, isAdminConfirmed: boolean):
         return false;
     }
     try {
-        const session = await getIronSession<SessionData>(cookies(), getAdminSessionOptions());
+        // --- FIX: Await cookies() before passing to getIronSession ---
+        const cookieStore = await cookies();
+        const session = await getIronSession<SessionData>(cookieStore, getAdminSessionOptions());
+        // --- END FIX ---
         session.userId = userId;
         session.isAdmin = true; // Explicitly set admin flag
         await session.save();
@@ -46,8 +49,12 @@ async function setAdminSessionCookie(userId: string, isAdminConfirmed: boolean):
 // REFACTORED: Helper to clear the admin session cookie directly
 async function clearAdminSessionCookie(): Promise<boolean> {
      try {
-        const session = await getIronSession<SessionData>(cookies(), getAdminSessionOptions());
+        // --- FIX: Await cookies() before passing to getIronSession ---
+        const cookieStore = await cookies();
+        const session = await getIronSession<SessionData>(cookieStore, getAdminSessionOptions());
+        // --- END FIX ---
         session.destroy();
+        // await session.save(); // save implicitly called by destroy in v8+
         console.log("Admin Auth Action: Admin session destroyed directly.");
         return true;
     } catch (error) {

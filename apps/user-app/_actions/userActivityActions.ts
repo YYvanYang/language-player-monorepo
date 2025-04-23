@@ -1,7 +1,7 @@
 // apps/user-app/_actions/userActivityActions.ts
 'use server';
 
-import { cookies } from 'next/headers';
+import { cookies } from 'next/headers'; // Import cookies
 import { revalidateTag, revalidatePath } from 'next/cache';
 import apiClient, { APIError } from '@repo/api-client';
 import type { RecordProgressRequestDTO, CreateBookmarkRequestDTO, BookmarkResponseDTO } from '@repo/types';
@@ -11,7 +11,10 @@ import { SessionData, getUserSessionOptions } from '@repo/auth'; // Use user opt
 // --- Helper to get authenticated User ID ---
 async function getAuthenticatedUserID(): Promise<string | null> {
      try {
-        const session = await getIronSession<SessionData>(cookies(), getUserSessionOptions());
+        // --- FIX: Await cookies() before passing to getIronSession ---
+        const cookieStore = await cookies();
+        const session = await getIronSession<SessionData>(cookieStore, getUserSessionOptions());
+        // --- END FIX ---
         return session.userId ?? null;
      } catch(error) {
         console.error("Error getting session in user activity action:", error);
