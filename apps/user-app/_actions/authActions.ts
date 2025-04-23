@@ -3,83 +3,108 @@
 
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
-import { cookies } from 'next/headers';
+import { cookies } from 'next/headers'; // Import cookies from next/headers
+import { getIronSession } from 'iron-session';
+import { SessionData, getUserSessionOptions } from '@repo/auth';
+import { encryptToken } from '../_lib/server-utils'; // Use correct relative path or alias
 import apiClient, { APIError } from '@repo/api-client';
 import type {
     AuthResponseDTO,
     LoginRequestDTO,
     RegisterRequestDTO,
     GoogleCallbackRequestDTO,
-    RefreshRequestDTO,
-    LogoutRequestDTO,
-    UserResponseDTO,
+    // RefreshRequestDTO, // Keep for potential future use
+    // LogoutRequestDTO, // Not used if using backend session invalidation via user ID
 } from '@repo/types';
-import { getIronSession } from 'iron-session';
-import { SessionData, getUserSessionOptions } from '@repo/auth';
-// Import encryption helper
-import { encryptToken } from '../_lib/server-utils'; // Use correct relative path or alias
 
-// Action Result Type
 interface ActionResult {
     success: boolean;
     message?: string;
     isNewUser?: boolean; // For Google callback
 }
 
-// --- MODIFIED: Helper to set session cookie, now encrypts access token ---
-async function setUserSessionCookie(userId: string, accessToken: string): Promise<boolean> {
-    if (!userId || !accessToken) {
-        console.error("Auth Action: Cannot set session: userId or accessToken is missing.");
+// --- Constants for Refresh Token Cookie ---
+const REFRESH_TOKEN_COOKIE_NAME = 'user_app_refresh_token';
+const REFRESH_TOKEN_MAX_AGE_SECONDS = 30 * 24 * 60 * 60; // 30 days (match backend/refresh API)
+
+// --- NEW: Helper to set cookies directly within Server Action ---
+async function setAuthCookiesDirectly(userId: string, accessToken: string, refreshToken: string): Promise<boolean> {
+    if (!userId || !accessToken || !refreshToken) {
+        console.error("Auth Action: Cannot set cookies directly: userId, accessToken, or refreshToken is missing.");
         return false;
     }
     try {
-        const encryptedAccessToken = encryptToken(accessToken); // Encrypt the token
+        const encryptedAccessToken = encryptToken(accessToken);
         if (!encryptedAccessToken) {
-            // Encryption failure is critical, prevent session establishment
-            console.error("Auth Action: Failed to encrypt access token. Session cannot be fully established.");
-            // Optionally destroy any potentially partially set session data?
-            // const existingSession = await getIronSession...; existingSession.destroy(); await existingSession.save();
+            console.error("Auth Action: Failed to encrypt access token. Cannot set cookies.");
             return false;
         }
 
-        const cookieStore = await cookies();
+        // 1. Set Iron Session Cookie (contains userId, encryptedAccessToken)
+        // We need the 'cookies()' store instance for getIronSession in Actions/Route Handlers
+        const cookieStore = cookies();
         const session = await getIronSession<SessionData>(cookieStore, getUserSessionOptions());
-
         session.userId = userId;
-        session.encryptedAccessToken = encryptedAccessToken; // Store encrypted token
-        delete session.isAdmin; // Ensure admin flag is not set for user app
-        await session.save();
-        console.log("Auth Action: User session cookie set (with encrypted token) for user:", userId);
+        session.encryptedAccessToken = encryptedAccessToken;
+        delete session.isAdmin;
+        await session.save(); // Applies Set-Cookie header for the session cookie
+
+        // 2. Set HttpOnly Refresh Token Cookie using cookies().set()
+        cookieStore.set(REFRESH_TOKEN_COOKIE_NAME, refreshToken, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            path: '/',
+            sameSite: 'lax',
+            maxAge: REFRESH_TOKEN_MAX_AGE_SECONDS,
+            // expires: new Date(Date.now() + REFRESH_TOKEN_MAX_AGE_SECONDS * 1000), // Alternative
+        });
+
+        console.log(`Auth Action: Session and Refresh Token cookies set directly for user: ${userId}`);
         return true;
     } catch (error) {
-        console.error("Auth Action: Error setting user session directly:", error);
+        console.error('Auth Action: Error setting cookies directly:', error);
         return false;
     }
 }
 
-// --- Helper to clear the user session cookie directly ---
-async function clearUserSessionCookie(): Promise<boolean> {
-     try {
-        const cookieStore = await cookies();
+// --- NEW: Helper to clear cookies directly within Server Action ---
+async function clearAuthCookiesDirectly(): Promise<boolean> {
+    try {
+        const cookieStore = cookies();
+
+        // 1. Clear Iron Session Cookie
         const session = await getIronSession<SessionData>(cookieStore, getUserSessionOptions());
-        session.destroy(); // Clears data and prepares cookie removal header on save
-        // No need to manually save unless required before redirect/return
-        console.log("Auth Action: User session destroyed directly.");
+        session.destroy();
+        // Normally save() is implicit in destroy for setting headers, but call explicitly if needed before further cookie ops
+        // await session.save();
+
+        // 2. Clear HttpOnly Refresh Token Cookie using cookies().delete() or .set() with past expiry
+        cookieStore.delete(REFRESH_TOKEN_COOKIE_NAME);
+        // OR (more robust):
+        // cookieStore.set(REFRESH_TOKEN_COOKIE_NAME, '', {
+        //     httpOnly: true,
+        //     secure: process.env.NODE_ENV === 'production',
+        //     path: '/',
+        //     sameSite: 'lax',
+        //     maxAge: -1, // Make it expire immediately
+        //     expires: new Date(0),
+        // });
+
+        console.log("Auth Action: Session and Refresh Token cookies cleared directly.");
         return true;
     } catch (error) {
-        console.error("Auth Action: Error destroying user session directly:", error);
+        console.error('Auth Action: Error clearing cookies directly:', error);
         return false;
     }
 }
 
-// --- MODIFIED: Login Action ---
+
+// --- MODIFIED: Login Action (Uses direct cookie helpers) ---
 export async function loginAction(previousState: ActionResult | null, formData: FormData): Promise<ActionResult> {
     const email = formData.get('email') as string;
     const password = formData.get('password') as string;
 
-    if (!email || !password) {
-        return { success: false, message: 'Email and password are required.' };
-    }
+    if (!email || !password) { return { success: false, message: 'Email and password are required.' }; }
 
     try {
         const loginData: LoginRequestDTO = { email, password };
@@ -90,24 +115,24 @@ export async function loginAction(previousState: ActionResult | null, formData: 
 
         const userId = authResponse.user?.id;
         const accessToken = authResponse.accessToken;
-        if (!userId || !accessToken) {
-            console.error("Login Action: Backend response missing userId or accessToken after successful login.");
-            return { success: false, message: 'Login failed: Could not establish session (missing credentials).' };
+        const refreshToken = authResponse.refreshToken;
+
+        if (!userId || !accessToken || !refreshToken) {
+            console.error("Login Action: Backend response missing required data.");
+            return { success: false, message: 'Login failed: Incomplete response from server.' };
         }
 
-        // MODIFIED: Pass accessToken to helper for encryption and saving
-        const sessionSet = await setUserSessionCookie(userId, accessToken);
-        if (!sessionSet) {
-            // Provide specific error if session setting fails
-            return { success: false, message: 'Login successful, but failed to save session state. Please try again.' };
+        // Use direct helper
+        const cookiesSet = await setAuthCookiesDirectly(userId, accessToken, refreshToken);
+        if (!cookiesSet) {
+            return { success: false, message: 'Login successful, but failed to save session. Please try again.' };
         }
 
         revalidatePath('/', 'layout');
-        // Note: Refresh token is NOT handled here - requires client-side secure storage
         console.log(`User ${userId} logged in successfully.`);
         return { success: true };
 
-    } catch (error) {
+    } catch (error) { /* ... error handling as before ... */
         console.error("Login Action Error:", error);
         if (error instanceof APIError) {
             if (error.status === 401) return { success: false, message: 'Invalid email or password.' };
@@ -117,41 +142,42 @@ export async function loginAction(previousState: ActionResult | null, formData: 
     }
 }
 
-// --- MODIFIED: Register Action ---
+// --- MODIFIED: Register Action (Uses direct cookie helpers) ---
 export async function registerAction(previousState: ActionResult | null, formData: FormData): Promise<ActionResult> {
-    const email = formData.get('email') as string;
-    const password = formData.get('password') as string;
-    const name = formData.get('name') as string;
+     const email = formData.get('email') as string;
+     const password = formData.get('password') as string;
+     const name = formData.get('name') as string;
 
-    if (!email || !password || !name) { return { success: false, message: 'Email, password, and name are required.' }; }
-    if (password.length < 8) { return { success: false, message: 'Password must be at least 8 characters.' }; }
+     if (!email || !password || !name) { return { success: false, message: 'Email, password, and name are required.' }; }
+     if (password.length < 8) { return { success: false, message: 'Password must be at least 8 characters.' }; }
 
-    try {
-        const registerData: RegisterRequestDTO = { email, password, name };
-        const authResponse = await apiClient<AuthResponseDTO>('/auth/register', {
-            method: 'POST',
-            body: JSON.stringify(registerData),
-        });
+     try {
+         const registerData: RegisterRequestDTO = { email, password, name };
+         const authResponse = await apiClient<AuthResponseDTO>('/auth/register', {
+             method: 'POST',
+             body: JSON.stringify(registerData),
+         });
 
-        const userId = authResponse.user?.id;
-        const accessToken = authResponse.accessToken;
-        if (!userId || !accessToken) {
-            console.error("Register Action: Backend response missing userId or accessToken after successful registration.");
-            return { success: false, message: 'Registration failed: Could not establish session (missing credentials).' };
-        }
+         const userId = authResponse.user?.id;
+         const accessToken = authResponse.accessToken;
+         const refreshToken = authResponse.refreshToken;
 
-        // MODIFIED: Pass accessToken to helper
-        const sessionSet = await setUserSessionCookie(userId, accessToken);
-        if (!sessionSet) {
-             // Provide specific error if session setting fails
-             return { success: false, message: 'Registration successful, but failed to save session state. Please try again.' };
-        }
+         if (!userId || !accessToken || !refreshToken) {
+             console.error("Register Action: Backend response missing required data.");
+             return { success: false, message: 'Registration failed: Incomplete response from server.' };
+         }
 
-        revalidatePath('/', 'layout');
-        console.log(`User ${userId} registered successfully.`);
-        return { success: true };
+         // Use direct helper
+         const cookiesSet = await setAuthCookiesDirectly(userId, accessToken, refreshToken);
+         if (!cookiesSet) {
+             return { success: false, message: 'Registration successful, but failed to save session. Please try again.' };
+         }
 
-    } catch (error) {
+         revalidatePath('/', 'layout');
+         console.log(`User ${userId} registered successfully.`);
+         return { success: true };
+
+     } catch (error) { /* ... error handling as before ... */
         console.error("Register Action Error:", error);
         if (error instanceof APIError) {
             if (error.status === 409) { return { success: false, message: 'Email already exists.' }; }
@@ -159,10 +185,10 @@ export async function registerAction(previousState: ActionResult | null, formDat
             return { success: false, message: error.message || 'Registration failed due to an API error.' };
         }
         return { success: false, message: 'An unexpected error occurred during registration.' };
-    }
+     }
 }
 
-// --- MODIFIED: Google Callback Action ---
+// --- MODIFIED: Google Callback Action (Uses direct cookie helpers) ---
 export async function googleCallbackAction(idToken: string): Promise<ActionResult> {
     if (!idToken) { return { success: false, message: 'Google ID token is required.' }; }
 
@@ -175,23 +201,24 @@ export async function googleCallbackAction(idToken: string): Promise<ActionResul
 
         const userId = authResponse.user?.id;
         const accessToken = authResponse.accessToken;
-        if (!userId || !accessToken) {
-             console.error("Google Callback Action: Backend response missing userId or accessToken after successful callback.");
-             return { success: false, message: 'Google Sign-In failed: Could not establish session (missing credentials).' };
+        const refreshToken = authResponse.refreshToken;
+
+        if (!userId || !accessToken || !refreshToken) {
+            console.error("Google Callback Action: Backend response missing required data.");
+            return { success: false, message: 'Google Sign-In failed: Incomplete response from server.' };
         }
 
-        // MODIFIED: Pass accessToken to helper
-        const sessionSet = await setUserSessionCookie(userId, accessToken);
-        if (!sessionSet) {
-            // Provide specific error if session setting fails
-             return { success: false, message: 'Google Sign-In successful, but failed to save session state. Please try again.' };
+        // Use direct helper
+        const cookiesSet = await setAuthCookiesDirectly(userId, accessToken, refreshToken);
+        if (!cookiesSet) {
+            return { success: false, message: 'Google Sign-In successful, but failed to save session. Please try again.' };
         }
 
         revalidatePath('/', 'layout');
         console.log(`User ${userId} authenticated via Google (New User: ${!!authResponse.isNewUser}).`);
         return { success: true, isNewUser: authResponse.isNewUser };
 
-    } catch (error) {
+    } catch (error) { /* ... error handling as before ... */
         console.error("Google Callback Action Error:", error);
         if (error instanceof APIError) {
             if (error.status === 409) { return { success: false, message: 'Email already linked to another account.' }; }
@@ -202,63 +229,42 @@ export async function googleCallbackAction(idToken: string): Promise<ActionResul
     }
 }
 
-// --- REFACTORED: Logout Action ---
+// --- MODIFIED: Logout Action (Uses direct cookie helpers) ---
 export async function logoutAction() {
-    // Backend logout (invalidate refresh token) - Requires secure refresh token handling client-side
-    // This part remains complex and needs a client-side strategy for storing the refresh token securely.
-    // const storedRefreshToken = await getRefreshTokenFromSecureStorage(); // Pseudocode
-    // if (storedRefreshToken) {
-    //     try {
-    //         // Note: Backend logout *might* not need the access token, only the refresh token
-    //         await apiClient('/auth/logout', { method: 'POST', body: { refreshToken: storedRefreshToken } });
-    //         await clearRefreshTokenFromSecureStorage(); // Pseudocode
-    //     } catch (err) { console.error("Backend logout call failed:", err); /* Handle potentially */ }
-    // } else {
-    //      console.log("Logout Action: No refresh token found to invalidate on backend.");
-    // }
+    try {
+        // IMPORTANT: Get session *before* calling backend logout, as we need the
+        // encrypted token for the apiClient call via the proxy.
+        const session = await getIronSession<SessionData>(cookies(), getUserSessionOptions());
+        const userIdForLog = session.userId; // For logging
 
-    // Clear the frontend session cookie directly
-    const cleared = await clearUserSessionCookie();
-    if (!cleared) {
-        // Log but proceed with redirect as the main goal is frontend logout
-        console.warn("Logout Action: Failed to clear user session cookie, redirecting anyway.");
+        // Check if user was actually logged in before attempting backend logout
+        if (session.userId && session.encryptedAccessToken) {
+            // Call backend /auth/logout. apiClient will handle using the token from the session via the proxy.
+            // Backend uses user ID from validated access token to invalidate refresh tokens.
+            await apiClient<void>('/auth/logout', { method: 'POST' });
+            console.log(`Logout Action: Backend logout request sent successfully for user ${userIdForLog}.`);
+        } else {
+             console.log("Logout Action: No active session found, skipping backend logout call.");
+        }
+    } catch (error) {
+        // Log the error, but proceed with frontend cookie clearing regardless
+        console.error("Logout Action: Error calling backend logout:", error);
+    }
+
+    // Always attempt to clear frontend cookies directly
+    const cookiesCleared = await clearAuthCookiesDirectly();
+    if (!cookiesCleared) {
+        console.warn("Logout Action: Failed to clear frontend auth cookies directly.");
+        // Usually not critical.
     }
 
     // Revalidate and redirect
-    revalidatePath('/', 'layout'); // Revalidate all pages potentially affected by auth state
-    redirect('/login'); // Redirect to login page
+    revalidatePath('/', 'layout');
+    redirect('/login');
 }
 
-// Refresh Action remains placeholder
+// Refresh Action remains a placeholder, client-side handles it via /api/auth/refresh
 export async function refreshSessionAction(refreshToken: string): Promise<ActionResult & { newAccessToken?: string; newRefreshToken?: string }> {
-    console.warn("refreshSessionAction is not fully implemented due to refresh token storage complexity.");
-    if (!refreshToken) {
-        return { success: false, message: 'Refresh token is required.' };
-    }
-    try {
-        const refreshData: RefreshRequestDTO = { refreshToken };
-        const authResponse = await apiClient<AuthResponseDTO>('/auth/refresh', {
-            method: 'POST',
-            body: JSON.stringify(refreshData),
-        });
-        // Client-side logic needs to handle storing new tokens
-        return {
-            success: true,
-            newAccessToken: authResponse.accessToken,
-            newRefreshToken: authResponse.refreshToken,
-        };
-    } catch (error) {
-        console.error("Refresh Action Error:", error);
-        if (error instanceof APIError && error.status === 401) {
-             console.log("Refresh token invalid/expired during refresh attempt.");
-             return { success: false, message: 'Session expired. Please log in again.' };
-        }
-        return { success: false, message: 'Failed to refresh session.' };
-    }
-    // Implementation would involve:
-    // 1. Calling backend `/auth/refresh` with the securely stored refreshToken.
-    // 2. Receiving new accessToken and refreshToken.
-    // 3. Encrypting the new accessToken and updating the session cookie.
-    // 4. Securely storing the new refreshToken client-side (e.g., HttpOnly cookie if possible, or secure local/session storage).
-    // 5. Returning the new tokens to the caller (e.g., an interceptor in apiClient).
+    console.warn("Server Action refreshSessionAction called, but refresh should be handled client-side via /api/auth/refresh.");
+    return { success: false, message: 'Refresh should be initiated client-side.' };
 }

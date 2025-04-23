@@ -5,7 +5,7 @@ import type { SessionOptions } from 'iron-session';
 export interface SessionData {
     userId?: string; // Store as string (UUID)
     isAdmin?: boolean; // Explicitly track admin status in session
-    encryptedAccessToken?: string; // ADDED: Encrypted JWT Access Token
+    encryptedAccessToken?: string | null; // ADDED: Encrypted JWT Access Token
 }
 
 // Recommended: Use environment variables for secrets and names
