@@ -8,6 +8,7 @@ import { getIronSession } from 'iron-session';
 import { SessionData, getUserSessionOptions } from '@repo/auth';
 import { encryptToken } from '../_lib/server-utils'; // Use correct relative path or alias
 import apiClient, { APIError } from '@repo/api-client';
+import logger from '@repo/logger'; // 导入日志库
 import type {
     AuthResponseDTO,
     LoginRequestDTO,
@@ -27,42 +28,60 @@ interface ActionResult {
 const REFRESH_TOKEN_COOKIE_NAME = 'user_app_refresh_token';
 const REFRESH_TOKEN_MAX_AGE_SECONDS = 30 * 24 * 60 * 60; // 30 days (match backend/refresh API)
 
+// 创建认证模块专用的日志记录器
+const authLogger = logger.child({ module: 'auth-actions' });
+
 // --- NEW: Helper to set cookies directly within Server Action ---
 async function setAuthCookiesDirectly(userId: string, accessToken: string, refreshToken: string): Promise<boolean> {
+    authLogger.info(`Setting cookies for userId: ${userId.substring(0, 4)}...`);
+    
     if (!userId || !accessToken || !refreshToken) {
-        console.error("Auth Action: Cannot set cookies directly: userId, accessToken, or refreshToken is missing.");
+        authLogger.error("Cannot set cookies directly: userId, accessToken, or refreshToken is missing.");
         return false;
     }
     try {
         const encryptedAccessToken = encryptToken(accessToken);
+        
         if (!encryptedAccessToken) {
-            console.error("Auth Action: Failed to encrypt access token. Cannot set cookies.");
+            authLogger.error("Failed to encrypt access token. Cannot set cookies.");
             return false;
         }
 
         // 1. Set Iron Session Cookie (contains userId, encryptedAccessToken)
-        // We need the 'cookies()' store instance for getIronSession in Actions/Route Handlers
         const cookieStore = await cookies();
-        const session = await getIronSession<SessionData>(cookieStore, getUserSessionOptions());
+        const sessionOptions = getUserSessionOptions();
+        const session = await getIronSession<SessionData>(cookieStore, sessionOptions);
+        
         session.userId = userId;
         session.encryptedAccessToken = encryptedAccessToken;
         delete session.isAdmin;
-        await session.save(); // Applies Set-Cookie header for the session cookie
+        
+        try {
+            await session.save(); // Applies Set-Cookie header for the session cookie
+        } catch (saveError) {
+            authLogger.error({ error: saveError }, "Failed to save session");
+            return false;
+        }
 
         // 2. Set HttpOnly Refresh Token Cookie using cookies().set()
-        cookieStore.set(REFRESH_TOKEN_COOKIE_NAME, refreshToken, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            path: '/',
-            sameSite: 'lax',
-            maxAge: REFRESH_TOKEN_MAX_AGE_SECONDS,
-            // expires: new Date(Date.now() + REFRESH_TOKEN_MAX_AGE_SECONDS * 1000), // Alternative
-        });
+        try {
+            cookieStore.set(REFRESH_TOKEN_COOKIE_NAME, refreshToken, {
+                httpOnly: true,
+                secure: process.env.NODE_ENV === 'production',
+                path: '/',
+                sameSite: 'lax',
+                maxAge: REFRESH_TOKEN_MAX_AGE_SECONDS,
+                // expires: new Date(Date.now() + REFRESH_TOKEN_MAX_AGE_SECONDS * 1000), // Alternative
+            });
+        } catch (cookieError) {
+            authLogger.error({ error: cookieError }, "Failed to set refresh token cookie");
+            return false;
+        }
 
-        console.log(`Auth Action: Session and Refresh Token cookies set directly for user: ${userId}`);
+        authLogger.info(`Authentication succeeded for user: ${userId}`);
         return true;
     } catch (error) {
-        console.error('Auth Action: Error setting cookies directly:', error);
+        authLogger.error({ error }, 'Error setting cookies directly');
         return false;
     }
 }
@@ -90,10 +109,10 @@ async function clearAuthCookiesDirectly(): Promise<boolean> {
         //     expires: new Date(0),
         // });
 
-        console.log("Auth Action: Session and Refresh Token cookies cleared directly.");
+        authLogger.info("Session and Refresh Token cookies cleared directly.");
         return true;
     } catch (error) {
-        console.error('Auth Action: Error clearing cookies directly:', error);
+        authLogger.error({ error }, 'Error clearing cookies directly');
         return false;
     }
 }

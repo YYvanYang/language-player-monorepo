@@ -34,21 +34,30 @@ export function createServerLogger(): Logger {
         },
         // Add service name if configured
         // base: config.serviceName ? { service: config.serviceName } : undefined,
+        
+        // 禁用多线程写入，以兼容Next.js的Server Actions环境
+        browser: {
+            asObject: true
+        },
     };
 
-    // Use pino-pretty only in development for readability
-    if (!config.isProduction) {
-        pinoOptions.transport = {
-            target: 'pino-pretty',
-            options: {
-                colorize: true,
-                translateTime: 'SYS:yyyy-mm-dd HH:MM:ss.l', // Human-readable time
-                ignore: 'pid,hostname,context', // Fields to hide in pretty print
-                messageFormat: '{context} {msg}', // Include context from child loggers before message
-                levelFirst: true,
-            },
-        };
-    }
+    // 由于与Next.js Server Actions的兼容性问题，禁用transport
+    // 不使用pino-pretty，因为它依赖于worker线程
+    // 如果在服务端（非Next.js Server Actions）环境中需要美化输出，可以
+    // 考虑使用直接的格式化函数或重新启用此功能
+    
+    // if (!config.isProduction) {
+    //     pinoOptions.transport = {
+    //         target: 'pino-pretty',
+    //         options: {
+    //             colorize: true,
+    //             translateTime: 'SYS:yyyy-mm-dd HH:MM:ss.l', // Human-readable time
+    //             ignore: 'pid,hostname,context', // Fields to hide in pretty print
+    //             messageFormat: '{context} {msg}', // Include context from child loggers before message
+    //             levelFirst: true,
+    //         },
+    //     };
+    // }
 
     const loggerInstance = pino(pinoOptions);
 
