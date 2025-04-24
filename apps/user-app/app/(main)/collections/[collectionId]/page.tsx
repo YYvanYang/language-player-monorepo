@@ -12,7 +12,7 @@ import { cookies } from 'next/headers';
 import { SessionData, getUserSessionOptions } from '@repo/auth'; // Use correct path
 import { APIError } from '@repo/api-client'; // Use correct path
 import { DeleteCollectionButton } from '@/_components/collection/DeleteCollectionButton'; // Client component for delete confirmation
-
+// import { Loader } from 'lucide-react';
 interface CollectionDetailPageProps {
     params: { collectionId: string };
 }
@@ -44,7 +44,8 @@ export default async function CollectionDetailPage({ params }: CollectionDetailP
 
     try {
         // Check session server-side to determine ownership *before* making potentially sensitive UI decisions
-        const session = await getIronSession<SessionData>(cookies(), getUserSessionOptions());
+        const cookieStore = await cookies();
+        const session = await getIronSession<SessionData>(cookieStore, getUserSessionOptions());
         const currentUserId = session.userId;
 
         // Fetch collection details (backend handles actual data access permissions)
@@ -125,60 +126,3 @@ export default async function CollectionDetailPage({ params }: CollectionDetailP
     );
 }
 
-// --- Client Component for Delete Button ---
-// (Can be in a separate file e.g., _components/collection/DeleteCollectionButton.tsx)
-'use client';
-import { useState, useTransition } from 'react';
-import { deleteCollectionAction } from '@/_actions/collectionActions';
-import { useRouter } from 'next/navigation';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@repo/ui"; // Assume AlertDialog exists
-
-interface DeleteCollectionButtonProps {
-    collectionId: string;
-    collectionTitle: string;
-}
-function DeleteCollectionButton({ collectionId, collectionTitle }: DeleteCollectionButtonProps) {
-    const [isDeleting, startDeleteTransition] = useTransition();
-    const [error, setError] = useState<string | null>(null);
-    const router = useRouter();
-
-    const handleDelete = () => {
-        setError(null);
-        startDeleteTransition(async () => {
-            const result = await deleteCollectionAction(collectionId);
-            if (result.success) {
-                alert("Collection deleted."); // Replace with toast
-                router.push('/collections'); // Redirect after delete
-            } else {
-                setError(result.message || "Failed to delete collection.");
-                 // Keep dialog open on error? Or close and show toast? Closing is simpler.
-            }
-        });
-    };
-
-    return (
-        <AlertDialog>
-            <AlertDialogTrigger asChild>
-                <Button variant="destructive" size="sm" disabled={isDeleting}>
-                    {isDeleting ? <Loader className="h-4 w-4 mr-1.5 animate-spin"/> : <Trash2 className="h-4 w-4 mr-1.5"/>}
-                    Delete
-                </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-                <AlertDialogHeader>
-                    <AlertDialogTitle>Delete Collection?</AlertDialogTitle>
-                    <AlertDialogDescription>
-                        Are you sure you want to delete the collection &quot;{collectionTitle}&quot;? This action cannot be undone.
-                         {error && <p className="text-red-500 text-sm mt-2">{error}</p>}
-                    </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                    <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
-                    <AlertDialogAction onClick={handleDelete} disabled={isDeleting} className="bg-red-600 hover:bg-red-700">
-                        {isDeleting ? "Deleting..." : "Yes, delete"}
-                    </AlertDialogAction>
-                </AlertDialogFooter>
-            </AlertDialogContent>
-        </AlertDialog>
-    );
-}

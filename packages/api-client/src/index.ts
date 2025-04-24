@@ -1,13 +1,11 @@
 // packages/api-client/src/index.ts
 import type { ErrorResponseDTO } from "@repo/types";
-// Import ReadonlyRequestCookies type for server-side cookie handling
 import type { ReadonlyRequestCookies } from 'next/dist/server/web/spec-extension/adapters/request-cookies';
-import logger from '@repo/logger'; // Use the shared logger
+import logger from '@repo/logger';
 
-// Create a logger specific to the api-client
 const apiClientLogger = logger.child({ module: 'api-client' });
 
-// Define APIError class (remains the same)
+// Define APIError class
 export class APIError extends Error {
     status: number;
     code: string;
@@ -26,7 +24,7 @@ export class APIError extends Error {
     }
 }
 
-// Helper function to determine base URL (remains the same)
+// Helper function to determine base URL
 function getApiClientBaseUrl(endpoint: string): string {
     const isProxyCall = endpoint.startsWith('/api/proxy/');
     const isServerSide = typeof window === 'undefined';
@@ -36,7 +34,6 @@ function getApiClientBaseUrl(endpoint: string): string {
             const appUrl = process.env.NEXT_PUBLIC_APP_URL;
             if (!appUrl) {
                 apiClientLogger.error("Config Error: NEXT_PUBLIC_APP_URL is not set. Required for server-side proxy calls.");
-                // Throwing here is safer than falling back in production.
                 throw new Error("NEXT_PUBLIC_APP_URL environment variable is not set. Cannot make server-side proxy calls.");
             }
             return appUrl.replace(/\/$/, '');
@@ -53,25 +50,20 @@ function getApiClientBaseUrl(endpoint: string): string {
     }
 }
 
-// Define RequestInit options (remains the same)
+// Define RequestInit options
 interface RequestOptions extends Omit<RequestInit, 'body'> {
     body?: any;
 }
 
 /**
  * Generic API client function using fetch.
- * Handles request/response processing, JSON parsing, error standardization.
- * Handles cookie forwarding for server-side calls to the internal BFF proxy.
- *
- * @template T The expected type of the successful response data.
- * @param {string} endpoint - API endpoint path (e.g., '/users/me' for direct, '/api/proxy/users/me' for proxy). MUST start with '/'.
- * @param {RequestOptions} [options={}] - Fetch options.
- * @returns {Promise<T>} Promise resolving to the parsed JSON response body or undefined for 204.
- * @throws {APIError} on network errors or non-2xx HTTP status codes.
+ * Handles cookie forwarding for server-side proxy calls.
+ * Handles Authorization header injection for server-side direct backend calls.
  */
 async function apiClient<T>(
     endpoint: string,
-    options: RequestOptions = {}
+    options: RequestOptions = {},
+    token?: string | null // Optional token for direct server-side calls
 ): Promise<T> {
     if (!endpoint.startsWith('/')) {
         apiClientLogger.warn({ endpoint }, `Endpoint should start with '/'. Prepending automatically.`);
@@ -86,45 +78,50 @@ async function apiClient<T>(
     const headers = new Headers(options.headers);
     let bodyToSend: BodyInit | null = null;
 
-    // --- Cookie Forwarding for Server-Side Proxy Calls ---
-    if (isServerSide && isProxyCall) {
-        apiClientLogger.debug({ url }, `Server-side proxy call detected. Attempting to forward cookies.`);
-        try {
-            // Dynamically import 'cookies' ONLY on the server
-            const { cookies: getCookies } = await import('next/headers');
-            // *** MUST await the cookies() function call ***
-            const cookieStore: ReadonlyRequestCookies = await getCookies();
-            const cookieHeader = cookieStore.getAll().map(cookie => `${cookie.name}=${cookie.value}`).join('; ');
-
-            if (cookieHeader) {
-                headers.set('Cookie', cookieHeader);
-                apiClientLogger.debug(`Forwarded Cookie header to proxy.`);
-            } else {
-                 apiClientLogger.warn(`No cookies found in incoming request to forward to proxy.`);
+    // --- START: Server-Side Auth Handling ---
+    if (isServerSide) {
+        if (isProxyCall) {
+            // --- Option 1: Forward Cookies to Proxy ---
+            apiClientLogger.debug({ url }, `Server-side proxy call detected. Attempting to forward cookies.`);
+            try {
+                const { cookies: getCookies } = await import('next/headers');
+                const cookieStore: ReadonlyRequestCookies = await getCookies();
+                const cookieHeader = cookieStore.getAll().map(cookie => `${cookie.name}=${cookie.value}`).join('; ');
+                if (cookieHeader) {
+                    headers.set('Cookie', cookieHeader);
+                    apiClientLogger.debug(`Forwarded Cookie header to proxy.`);
+                } else {
+                    apiClientLogger.warn(`No cookies found in incoming request to forward to proxy.`);
+                }
+            } catch (e: any) {
+                apiClientLogger.error({ error: e, url }, `Error importing/using next/headers cookies() for proxy call`);
             }
-        } catch (e: any) {
-            // Error might occur if 'next/headers' is unavailable (e.g., wrong context)
-            apiClientLogger.error({ error: e, url }, `Error importing/using next/headers cookies() for proxy call`);
-            // Proceed without cookies, proxy will likely reject if auth needed.
+        } else if (token) {
+            // --- Option 2: Inject Bearer Token for Direct Backend Call ---
+            apiClientLogger.debug({ url }, `Server-side direct call detected. Injecting Authorization header.`);
+            headers.set('Authorization', `Bearer ${token}`);
+        } else {
+            // Server-side direct call *without* a token provided
+            apiClientLogger.warn({ url }, `Server-side direct call initiated without an explicit token. Request will likely be unauthenticated.`);
         }
     }
-    // --- End Cookie Forwarding ---
+    // --- END: Server-Side Auth Handling ---
 
-    // --- Body Processing (remains the same) ---
+    // --- Body Processing ---
     if (options.body !== undefined && options.body !== null) {
-         if (options.body instanceof FormData || options.body instanceof URLSearchParams || options.body instanceof ArrayBuffer || options.body instanceof Blob || typeof options.body === 'string') {
-             bodyToSend = options.body;
-             if (options.body instanceof FormData) { headers.delete('Content-Type'); }
-             else if (options.body instanceof URLSearchParams && !headers.has("Content-Type")) { headers.set("Content-Type", "application/x-www-form-urlencoded"); }
-         } else {
-             try {
-                 bodyToSend = JSON.stringify(options.body);
-                 if (!headers.has("Content-Type")) { headers.set("Content-Type", "application/json"); }
-             } catch (stringifyError) {
-                 apiClientLogger.error({ error: stringifyError, url }, `Failed to stringify JSON request body`);
-                 throw new APIError("Failed to serialize request body.", 0, "SERIALIZATION_ERROR", undefined, stringifyError);
-             }
-         }
+        if (options.body instanceof FormData || options.body instanceof URLSearchParams || options.body instanceof ArrayBuffer || options.body instanceof Blob || typeof options.body === 'string') {
+            bodyToSend = options.body;
+            if (options.body instanceof FormData) { headers.delete('Content-Type'); }
+            else if (options.body instanceof URLSearchParams && !headers.has("Content-Type")) { headers.set("Content-Type", "application/x-www-form-urlencoded"); }
+        } else {
+            try {
+                bodyToSend = JSON.stringify(options.body);
+                if (!headers.has("Content-Type")) { headers.set("Content-Type", "application/json"); }
+            } catch (stringifyError) {
+                apiClientLogger.error({ error: stringifyError, url }, `Failed to stringify JSON request body`);
+                throw new APIError("Failed to serialize request body.", 0, "SERIALIZATION_ERROR", undefined, stringifyError);
+            }
+        }
     }
 
     if (!headers.has("Accept")) { headers.set("Accept", "application/json"); }
@@ -136,8 +133,8 @@ async function apiClient<T>(
         headers: headers,
         body: bodyToSend,
         cache: options.cache ?? 'no-store',
-        // Set credentials based on whether it's a proxy call or not, and environment
-        credentials: (isServerSide && isProxyCall) ? 'omit' : options.credentials ?? 'include',
+        // Omit credentials if server-side, include otherwise (for browser calls)
+        credentials: (isServerSide) ? 'omit' : options.credentials ?? 'include',
     };
 
     // --- Fetch Execution ---
@@ -163,7 +160,8 @@ async function apiClient<T>(
     }
 
     let responseText: string | null = null;
-    try { responseText = await response.text(); } catch (readError: any) { /* ... error handling ... */
+    try { responseText = await response.text(); }
+    catch (readError: any) {
         apiClientLogger.warn({ ...logContext, error: readError }, `Failed to read response body`);
         const msg = `API request ${response.ok ? 'succeeded' : 'failed'} (${response.status}) but response body could not be fully read.`;
         const code = response.ok ? "READ_ERROR_SUCCESS" : `READ_ERROR_FAIL_${response.status}`;
@@ -206,14 +204,18 @@ async function apiClient<T>(
 
 export default apiClient;
 
-// Convenience methods (remain the same)
-export const apiGet = <T>(endpoint: string, options?: Omit<RequestOptions, 'method' | 'body'>) =>
-    apiClient<T>(endpoint, { ...options, method: 'GET' });
-export const apiPost = <T>(endpoint: string, body?: any, options?: Omit<RequestOptions, 'method' | 'body'>) =>
-    apiClient<T>(endpoint, { ...options, method: 'POST', body });
-export const apiPut = <T>(endpoint: string, body?: any, options?: Omit<RequestOptions, 'method' | 'body'>) =>
-    apiClient<T>(endpoint, { ...options, method: 'PUT', body });
-export const apiPatch = <T>(endpoint: string, body?: any, options?: Omit<RequestOptions, 'method' | 'body'>) =>
-    apiClient<T>(endpoint, { ...options, method: 'PATCH', body });
-export const apiDelete = <T = void>(endpoint: string, options?: Omit<RequestOptions, 'method' | 'body'>) =>
-    apiClient<T>(endpoint, { ...options, method: 'DELETE' });
+// --- Convenience Methods - Add Optional Token Parameter ---
+export const apiGet = <T>(endpoint: string, options?: Omit<RequestOptions, 'method' | 'body'>, token?: string | null) =>
+    apiClient<T>(endpoint, { ...options, method: 'GET' }, token);
+
+export const apiPost = <T>(endpoint: string, body?: any, options?: Omit<RequestOptions, 'method' | 'body'>, token?: string | null) =>
+    apiClient<T>(endpoint, { ...options, method: 'POST', body }, token);
+
+export const apiPut = <T>(endpoint: string, body?: any, options?: Omit<RequestOptions, 'method' | 'body'>, token?: string | null) =>
+    apiClient<T>(endpoint, { ...options, method: 'PUT', body }, token);
+
+export const apiPatch = <T>(endpoint: string, body?: any, options?: Omit<RequestOptions, 'method' | 'body'>, token?: string | null) =>
+    apiClient<T>(endpoint, { ...options, method: 'PATCH', body }, token);
+
+export const apiDelete = <T = void>(endpoint: string, options?: Omit<RequestOptions, 'method' | 'body'>, token?: string | null) =>
+    apiClient<T>(endpoint, { ...options, method: 'DELETE' }, token);
