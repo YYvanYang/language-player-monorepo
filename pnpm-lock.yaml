@@ -233,6 +233,9 @@ importers:
 
   packages/api-client:
     dependencies:
+      '@repo/logger':
+        specifier: workspace:*
+        version: link:../logger
       '@repo/types':
         specifier: workspace:*
         version: link:../types
