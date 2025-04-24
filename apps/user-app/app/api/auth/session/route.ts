@@ -11,18 +11,27 @@ const sessionOptions = getUserSessionOptions(); // Get user-specific options
  * Used by AuthContext to check client-side auth state.
  */
 export async function GET(request: NextRequest) {
+  console.log("GET /api/auth/session: Received request");
   // Response must be constructed BEFORE accessing session if using Route Handler context
   const response = NextResponse.json({ user: null, isAuthenticated: false });
   try {
     const session = await getIronSession<SessionData>(request, response, sessionOptions);
+    console.log("GET /api/auth/session: Iron session obtained.");
+
+    // Explicitly log the userId found (or not found)
+    console.log("GET /api/auth/session: Session userId found:", session.userId);
+    console.log("GET /api/auth/session: Session isAdmin found:", session.isAdmin); // Should be undefined/null here
+    console.log("GET /api/auth/session: Session encryptedAccessToken found:", session.encryptedAccessToken ? 'Yes' : 'No');
 
     if (!session.userId) {
+      console.log("GET /api/auth/session: No userId found in session. Responding unauthenticated.");
       // console.log("User Session GET: No userId found.");
       // No need to explicitly return 401, just return unauthenticated state
       // Session cookie might be cleared/expired, client needs to know they aren't logged in.
       return NextResponse.json({ user: null, isAuthenticated: false });
     }
 
+    console.log(`GET /api/auth/session: Valid session found for userId ${session.userId}. Responding authenticated.`);
     // User has a valid session according to the cookie
     // console.log(`User Session GET: Valid session found for userId ${session.userId}`);
     return NextResponse.json({
@@ -31,7 +40,7 @@ export async function GET(request: NextRequest) {
     });
 
   } catch (error) {
-      console.error("User Session GET Error:", error);
+      console.error("GET /api/auth/session: Error during session processing:", error);
       // Return a generic server error if session handling fails unexpectedly
       return NextResponse.json({ message: "Failed to retrieve session information." }, { status: 500 });
   }

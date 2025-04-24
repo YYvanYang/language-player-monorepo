@@ -40,10 +40,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           headers: { 'Accept': 'application/json' },
           cache: 'no-store', // Ensure fresh check
       });
+      console.log(`AuthContext: checkSession fetch status: ${response.status}`); // Log status
 
       // Check status code explicitly
       if (response.status === 401 || response.status === 403) {
-         // console.log("AuthContext: No authenticated session found (401/403).");
+         console.log("AuthContext: No authenticated session found (401/403).");
          setUser(null);
       } else if (!response.ok) {
          // Handle other non-OK statuses
@@ -52,10 +53,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } else {
          const data = await response.json() as { user: AuthUser | null, isAuthenticated: boolean };
          if (data.isAuthenticated && data.user?.id) {
-            // console.log("AuthContext: Session validated for user:", data.user.id);
+            console.log("AuthContext: Session validated for user:", data.user.id);
             setUser(data.user);
          } else {
-            // console.log("AuthContext: Session check returned unauthenticated.");
+            console.log("AuthContext: Session check returned unauthenticated.");
             setUser(null);
          }
       }
