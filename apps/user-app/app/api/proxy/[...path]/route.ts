@@ -3,8 +3,12 @@ import { type NextRequest, NextResponse } from 'next/server';
 import { getIronSession } from 'iron-session';
 import { SessionData, getUserSessionOptions } from '@repo/auth';
 import { APIError } from '@repo/api-client';
+import logger from '@repo/logger';
 // Import the decryption function
 import { decryptToken } from '@/_lib/server-utils'; // Use alias or correct relative path
+
+// 创建代理专用日志记录器
+const proxyLogger = logger.child({ module: 'api-proxy' });
 
 // Re-export methods for each HTTP verb
 export { handleProxy as GET, handleProxy as POST, handleProxy as PUT, handleProxy as DELETE, handleProxy as PATCH }
@@ -17,47 +21,67 @@ async function handleProxy(
     const apiPath = params.path.join('/');
     const backendBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
 
+    proxyLogger.info(`[${request.method}] Received request for /${apiPath}${request.nextUrl.search || ''}`);
+
     if (!backendBaseUrl) {
-        console.error("Proxy Error: NEXT_PUBLIC_API_BASE_URL is not configured.");
+        proxyLogger.error("Config Error: NEXT_PUBLIC_API_BASE_URL is not configured.");
         return NextResponse.json({ message: "API endpoint configuration error" }, { status: 500 });
     }
 
-    let session: SessionData | undefined;
+    let session: SessionData;
     let decryptedToken: string | null = null;
     let hasValidSession = false;
+    const response = NextResponse.next();
 
     try {
+        // 详细记录会话处理过程
+        proxyLogger.debug(`Starting session validation for request to /${apiPath}...`);
+        
         // Pass empty response initially, headers will be added later or by fetch response
-        session = await getIronSession<SessionData>(request, NextResponse.next(), getUserSessionOptions());
+        session = await getIronSession<SessionData>(request, response, getUserSessionOptions());
         hasValidSession = !!session?.userId; // Check if basic session exists
 
         if (!hasValidSession) {
-             console.log(`Proxy: Unauthorized access attempt to /${apiPath} (no session).`);
+            proxyLogger.warn(`Unauthorized access attempt to /${apiPath} (no session).`);
             return NextResponse.json({ code: 'UNAUTHENTICATED', message: 'Authentication required.' }, { status: 401 });
         }
 
+        // 此时session.userId一定不为undefined (hasValidSession检查已确保)
+        const userId = session.userId as string;
+        proxyLogger.debug(`Session found for user ${userId.substring(0, 8)}...`);
+
         if (!session.encryptedAccessToken) {
-             console.warn(`Proxy: Missing encryptedAccessToken in session for user ${session.userId} accessing /${apiPath}. Session might be outdated.`);
-             // Destroy potentially incomplete session? Or just deny access? Deny is safer.
-             // session.destroy(); await session.save();
-             return NextResponse.json({ code: 'UNAUTHENTICATED', message: 'Session data incomplete. Please login again.' }, { status: 401 });
+            proxyLogger.warn(`Missing encryptedAccessToken in session for user ${userId} accessing /${apiPath}. Session might be outdated.`);
+            // Destroy potentially incomplete session? Or just deny access? Deny is safer.
+            // session.destroy(); await session.save();
+            return NextResponse.json({ code: 'UNAUTHENTICATED', message: 'Session data incomplete. Please login again.' }, { status: 401 });
         }
 
+        proxyLogger.debug(`Attempting to decrypt token for user ${userId.substring(0, 8)}...`);
+        proxyLogger.debug(`Encrypted token format check: ${session.encryptedAccessToken.includes(':') ? 'valid (has separator)' : 'INVALID (missing separator)'}`);
+        
         decryptedToken = decryptToken(session.encryptedAccessToken);
 
         if (!decryptedToken) {
-            console.error(`Proxy: Failed to decrypt token for user ${session.userId} accessing /${apiPath}. Session is likely invalid.`);
-            // Destroy the invalid session
-            session.destroy(); // Marks for destruction
-            const response = NextResponse.json({ code: 'UNAUTHENTICATED', message: 'Session decryption failed. Please login again.' }, { status: 401 });
-            await session.save(); // Saves the destruction (sets cookie removal headers on response)
-            return response;
+            proxyLogger.error(`Failed to decrypt token for user ${userId} accessing /${apiPath}. Session is likely invalid.`);
+            // 检查环境变量
+            const hasEncryptionKey = !!process.env.ACCESS_TOKEN_ENCRYPTION_KEY;
+            const hasEncryptionSalt = !!process.env.ACCESS_TOKEN_ENCRYPTION_SALT;
+            proxyLogger.error(`Environment check - Encryption key: ${hasEncryptionKey ? 'SET' : 'MISSING'}, Encryption salt: ${hasEncryptionSalt ? 'SET' : 'MISSING'}`);
+            
+            // 销毁会话 (iron-session添加的方法，不在SessionData类型中)
+            // @ts-ignore - session.destroy 是iron-session运行时添加的方法
+            session.destroy(); 
+            const errorResponse = NextResponse.json({ code: 'UNAUTHENTICATED', message: 'Session decryption failed. Please login again.' }, { status: 401 });
+            // @ts-ignore - session.save 是iron-session运行时添加的方法
+            await session.save(); 
+            return errorResponse;
         }
         // If decryption succeeded, we have a token to use
-        console.log(`Proxy: Decrypted token successfully for user ${session.userId} accessing /${apiPath}.`);
+        proxyLogger.debug(`Decrypted token successfully for user ${userId.substring(0, 8)}. Token length: ${decryptedToken.length}, prefix: ${decryptedToken.substring(0, 10)}...`);
 
     } catch (sessionError) {
-        console.error(`Proxy: Error reading session for /${apiPath}:`, sessionError);
+        proxyLogger.error({ error: sessionError }, `Error reading session for /${apiPath}`);
         return NextResponse.json({ message: "Session handling error" }, { status: 500 });
     }
 
@@ -81,12 +105,14 @@ async function handleProxy(
 
     // Add the Authorization header with the decrypted token
     headers.set('Authorization', `Bearer ${decryptedToken}`);
+    proxyLogger.debug(`Added Authorization header with Bearer token`);
+    
     // Remove Content-Type if it's multipart/form-data, let fetch set it with boundary
     if (headers.get('content-type')?.includes('multipart/form-data')) {
        headers.delete('content-type');
     }
 
-    console.log(`Proxy: Forwarding ${request.method} to ${targetUrl}`);
+    proxyLogger.info(`Forwarding ${request.method} to ${targetUrl}`);
 
     try {
         // Use streaming for request body if available
@@ -104,6 +130,24 @@ async function handleProxy(
             cache: 'no-store',
             credentials: 'omit', // We are sending Authorization header
         });
+
+        proxyLogger.info(`Received response from backend: ${backendResponse.status} ${backendResponse.statusText}`);
+        
+        // 记录响应详情
+        if (backendResponse.status >= 400) {
+            const contentType = backendResponse.headers.get('content-type');
+            if (contentType && contentType.includes('application/json')) {
+                try {
+                    const errorClone = backendResponse.clone();
+                    const errorData = await errorClone.json();
+                    proxyLogger.error({ errorData }, `Backend returned error ${backendResponse.status}`);
+                } catch (err) {
+                    proxyLogger.error(`Backend returned error ${backendResponse.status}, but could not parse response body`);
+                }
+            } else {
+                proxyLogger.error(`Backend returned error ${backendResponse.status} ${backendResponse.statusText}`);
+            }
+        }
 
         // Create a new response streaming the body and copying relevant headers
         const responseHeaders = new Headers();
@@ -126,7 +170,7 @@ async function handleProxy(
         });
 
     } catch (fetchError: any) {
-         console.error(`Proxy: Error fetching backend API ${targetUrl}:`, fetchError);
+         proxyLogger.error({ error: fetchError }, `Error fetching backend API ${targetUrl}`);
          const message = fetchError.cause?.code === 'ECONNREFUSED'
              ? 'API service unavailable.'
              : `Failed to connect to API service: ${fetchError.message}`;
