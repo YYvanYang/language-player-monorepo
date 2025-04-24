@@ -168,7 +168,7 @@ def is_binary_file(filepath: str) -> bool:
         return True
 
 def combine_code_to_markdown(
-    output_filename: str = "project_code.md", 
+    output_filename: Optional[str] = None, 
     exclude_list: Optional[List[str]] = None,
     use_git: bool = True,
     root_dir: str = ".",
@@ -178,6 +178,13 @@ def combine_code_to_markdown(
     """将符合条件的文件合并到 Markdown 文件中"""
     if exclude_list is None:
         exclude_list = DEFAULT_EXCLUDES.copy()
+    
+    # 获取项目名称
+    project_name = os.path.basename(os.path.abspath(root_dir))
+    
+    # 如果没有指定输出文件名，则使用项目名称构建
+    if output_filename is None:
+        output_filename = f"{project_name}_frontend_codebase.md"
     
     # 始终排除输出文件
     if output_filename not in exclude_list:
@@ -234,8 +241,6 @@ def combine_code_to_markdown(
     
     if verbose:
         print(f"处理 {len(filtered_files)} 个文件，写入到 {output_filename}...")
-    
-    project_name = os.path.basename(os.path.abspath(root_dir))
     
     try:
         with open(output_filename, 'w', encoding='utf-8') as outfile:
@@ -300,8 +305,8 @@ if __name__ == "__main__":
     
     parser.add_argument(
         "-o", "--output",
-        default="project_code.md",
-        help="输出的 Markdown 文件名"
+        default=None,
+        help="输出的 Markdown 文件名（默认为：项目名称_frontend_codebase.md）"
     )
     
     parser.add_argument(
