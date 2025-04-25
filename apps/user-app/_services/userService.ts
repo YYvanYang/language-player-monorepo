@@ -11,7 +11,7 @@ import type {
 } from '@repo/types';
 import { buildQueryString } from '@repo/utils';
 
-const USER_ME_ENDPOINT = '/users/me'; // Base for current user data
+const USER_ME_ENDPOINT = '/api/proxy/users/me'; // Base for current user data
 
 /**
  * Fetches the profile of the currently authenticated user.
