@@ -103,7 +103,7 @@ function BookmarksPageContent() {
                     itemsPerPage={limit}
                 />
             )}
-        </>
+        </div>
     );
 }
 
