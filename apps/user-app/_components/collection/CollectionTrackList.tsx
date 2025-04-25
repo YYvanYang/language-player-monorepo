@@ -1,7 +1,7 @@
 // apps/user-app/_components/collection/CollectionTrackList.tsx
 'use client';
 
-import React, { useState, useEffect, useTransition, useMemo } from 'react';
+import React, { useState, useEffect, useTransition, useMemo, useCallback } from 'react';
 import type { AudioTrackResponseDTO } from '@repo/types';
 import { PlayTrackButton } from '@/_components/track/PlayTrackButton'; // Use correct import alias
 import { Button, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@repo/ui';
