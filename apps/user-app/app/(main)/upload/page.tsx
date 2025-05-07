@@ -2,7 +2,7 @@
 'use client';
 
 import React, { useState, useCallback, ChangeEvent, useTransition, FormEvent, useRef, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/_hooks/useAuth';
 import {
@@ -73,7 +73,7 @@ const getAudioDuration = (audioFile: File): Promise<number | null> => {
 export default function UploadPage() {
     uploadLogger.info("UploadPage rendered");
     const router = useRouter();
-    const { pathname } = router; // For redirect URL, though might need full router for other parts
+    const pathname = usePathname(); // 使用usePathname()获取当前路径
     const { isAuthenticated, isLoading: isLoadingAuth } = useAuth();
 
     // --- Single Upload State & Logic ---
@@ -218,7 +218,10 @@ export default function UploadPage() {
                 xhr.onabort = () => {
                     singleXhrRef.current = null;
                     uploadLogger.info("Single upload aborted by user.", { objectKey: result?.objectKey, currentStage: singleStage });
-                    if (singleStage !== 'success' && singleStage !== 'completing') setSingleStage('select');
+                    const stage = singleStage as SingleUploadStage;
+                    if (stage !== 'success' && stage !== 'completing') {
+                        setSingleStage('select');
+                    }
                 };
                 xhr.setRequestHeader('Content-Type', singleFile.type);
                 xhr.send(singleFile);
@@ -473,10 +476,10 @@ export default function UploadPage() {
                                 if (rhfIndex !== -1) {
                                     setBatchMetaValue(`tracks.${rhfIndex}.objectKey`, resultItem.objectKey);
                                 }
-                                return { ...bf, uploadUrl: resultItem.uploadUrl, objectKey: resultItem.objectKey, status: 'pending' };
+                                return { ...bf, uploadUrl: resultItem.uploadUrl, objectKey: resultItem.objectKey, status: 'pending' as const };
                             } else {
                                 someUrlsFailed = true;
-                                return { ...bf, status: 'error', errorMsg: resultItem?.error || 'Failed to get upload URL' };
+                                return { ...bf, status: 'error' as const, errorMsg: resultItem?.error || 'Failed to get upload URL' };
                             }
                         }
                         return bf;
@@ -632,7 +635,11 @@ export default function UploadPage() {
                             <Label htmlFor="singleAudioFile">Select Audio File</Label>
                             <Input id="singleAudioFile" type="file" accept="audio/*,.m4a,.ogg" onChange={handleSingleFileChange} />
                             {singleFile && <p className="text-sm text-slate-600 dark:text-slate-400">Selected: {singleFile.name}</p>}
-                            {watchMeta("durationMs") > 0 && <p className="text-sm text-slate-500">Detected duration: ~{Math.round(watchMeta("durationMs") / 1000)}s</p>}
+                            {watchMeta("durationMs") != null && (watchMeta("durationMs") as number) > 0 && (
+                                <p className="text-sm text-slate-500">
+                                    Detected duration: ~{Math.round(((watchMeta("durationMs") as number) || 0) / 1000)}s
+                                </p>
+                            )}
                             <Button onClick={handleRequestSingleUpload} disabled={!singleFile || singleIsProcessing}>
                                 {singleIsProcessing ? <Loader className="h-4 w-4 mr-2 animate-spin"/> : <UploadCloud className="h-4 w-4 mr-2"/>}
                                 {singleIsProcessing ? 'Preparing...' : 'Upload & Continue'}
@@ -666,8 +673,8 @@ export default function UploadPage() {
                              <div className="flex justify-between items-center pt-4">
                                 <Button variant="outline" type="button" onClick={resetSingleUpload} disabled={isMetaSubmitting || singleIsProcessing}>Cancel</Button>
                                 <Button type="submit" disabled={isMetaSubmitting || singleIsProcessing}>
-                                     {(isMetaSubmitting || singleIsProcessing && singleStage === 'completing') ? <Loader className="h-4 w-4 mr-2 animate-spin"/> : null}
-                                     {(isMetaSubmitting || singleIsProcessing && singleStage === 'completing') ? 'Saving...' : 'Create Track'}
+                                     {(isMetaSubmitting || (singleIsProcessing && (singleStage as SingleUploadStage) === 'completing')) ? <Loader className="h-4 w-4 mr-2 animate-spin"/> : null}
+                                     {(isMetaSubmitting || (singleIsProcessing && (singleStage as SingleUploadStage) === 'completing')) ? 'Saving...' : 'Create Track'}
                                  </Button>
                              </div>
                          </form>
@@ -683,11 +690,12 @@ export default function UploadPage() {
                     {batchStage === 'select' && (
                          <div className="space-y-3">
                              <Label htmlFor="batchAudioFiles">Select Multiple Audio Files</Label>
-                             <Input id="batchAudioFiles" type="file" accept="audio/*,.m4a,.ogg" multiple onChange={handleBatchFileChange} disabled={batchIsGloballyProcessing && batchStage === 'processing_files'} />
+                             <Input id="batchAudioFiles" type="file" accept="audio/*,.m4a,.ogg" multiple onChange={handleBatchFileChange} 
+                                disabled={batchIsGloballyProcessing && batchStage === 'processing_files' as BatchUploadStage} />
                              {batchFiles.length > 0 && <p className="text-sm text-slate-600">{batchFiles.length} file(s) selected. Ready to prepare for upload.</p>}
                              <Button onClick={handleStartAllBatchUploads} disabled={batchFiles.length === 0 || batchIsGloballyProcessing}>
-                                 {batchIsGloballyProcessing && batchStage === 'processing_files' ? <Loader className="h-4 w-4 mr-2 animate-spin"/> : <UploadCloud className="h-4 w-4 mr-2"/>}
-                                 {batchIsGloballyProcessing && batchStage === 'processing_files' ? 'Processing Files...' : `Prepare ${batchFiles.length > 0 ? batchFiles.length : ''} File(s) for Upload`}
+                                 {batchIsGloballyProcessing && batchStage === 'processing_files' as BatchUploadStage ? <Loader className="h-4 w-4 mr-2 animate-spin"/> : <UploadCloud className="h-4 w-4 mr-2"/>}
+                                 {batchIsGloballyProcessing && batchStage === 'processing_files' as BatchUploadStage ? 'Processing Files...' : `Prepare ${batchFiles.length > 0 ? batchFiles.length : ''} File(s) for Upload`}
                              </Button>
                          </div>
                     )}
@@ -729,19 +737,19 @@ export default function UploadPage() {
                                                      {isUploading ? `${fileStatus.progress}%` : fileStatus.status}
                                                  </span>
                                              </div>
-                                             {isUploading && <Progress value={fileStatus.progress} size="sm" className="mb-1"/>}
+                                             {isUploading && <Progress value={fileStatus.progress} className="mb-1"/>}
                                              {isError && <p className="text-xs text-red-600 mb-2">{fileStatus.errorMsg}</p>}
                                              {isPendingUrl && <p className="text-xs text-slate-500 italic">Waiting for upload URL...</p>}
 
                                              <div className="flex gap-2 mb-2">
                                                  {fileStatus.status === 'pending' && fileStatus.uploadUrl && !isUploading && (
-                                                    <Button size="xs" type="button" variant="outline" onClick={() => handleIndividualBatchUpload(fileStatus, index)} disabled={batchIsGloballyProcessing}>Upload this file</Button>
+                                                    <Button size="sm" type="button" variant="outline" onClick={() => handleIndividualBatchUpload(fileStatus, index)} disabled={batchIsGloballyProcessing}>Upload this file</Button>
                                                  )}
                                                  {isUploading && fileStatus.xhr && (
-                                                     <Button size="xs" type="button" variant="destructive" onClick={() => fileStatus.xhr?.abort()}>Cancel</Button>
+                                                     <Button size="sm" type="button" variant="destructive" onClick={() => fileStatus.xhr?.abort()}>Cancel</Button>
                                                  )}
                                                   {isError && (
-                                                     <Button size="xs" type="button" variant="outline" onClick={() => {
+                                                     <Button size="sm" type="button" variant="outline" onClick={() => {
                                                          uploadLogger.info("Retrying batch item.", { filename: fileStatus.file.name, hasUrl: !!fileStatus.uploadUrl });
                                                          if (!fileStatus.uploadUrl) {
                                                              setBatchFiles(prev => prev.map(f => f.id === fileStatus.id ? {...f, status: 'pending', errorMsg: undefined} : f));
@@ -772,8 +780,8 @@ export default function UploadPage() {
                                  <div className="flex justify-between items-center pt-4">
                                       <Button variant="outline" type="button" onClick={resetBatchUpload} disabled={isBatchMetaSubmitting || batchIsGloballyProcessing}>Clear Batch & Start Over</Button>
                                      <Button type="submit" disabled={isBatchMetaSubmitting || batchIsGloballyProcessing || batchFiles.filter(f=>f.status === 'uploaded').length === 0}>
-                                         {(isBatchMetaSubmitting || (batchIsGloballyProcessing && batchStage === 'completing')) ? <Loader className="h-4 w-4 mr-2 animate-spin"/> : <ListPlus size={16} className="mr-1"/>}
-                                         {(isBatchMetaSubmitting || (batchIsGloballyProcessing && batchStage === 'completing')) ? 'Finalizing...' : `Finalize ${batchFiles.filter(f=>f.status === 'uploaded').length} Uploaded Track(s)`}
+                                         {(isBatchMetaSubmitting || (batchIsGloballyProcessing && batchStage === 'completing' as BatchUploadStage)) ? <Loader className="h-4 w-4 mr-2 animate-spin"/> : <ListPlus size={16} className="mr-1"/>}
+                                         {(isBatchMetaSubmitting || (batchIsGloballyProcessing && batchStage === 'completing' as BatchUploadStage)) ? 'Finalizing...' : `Finalize ${batchFiles.filter(f=>f.status === 'uploaded').length} Uploaded Track(s)`}
                                      </Button>
                                  </div>
                              )}
@@ -803,7 +811,7 @@ export default function UploadPage() {
                      )}
                      {(batchStage === 'uploading' || batchStage === 'metadata' || batchStage === 'error' && fields.length > 0) && (
                           <div className="pt-4">
-                             <Button variant="outline" size="sm" onClick={resetBatchUpload} disabled={batchIsGloballyProcessing && batchStage === 'completing'}>
+                             <Button variant="outline" size="sm" onClick={resetBatchUpload} disabled={batchIsGloballyProcessing && batchStage === 'completing' as BatchUploadStage}>
                                 Cancel & Clear Batch
                              </Button>
                           </div>
